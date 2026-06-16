@@ -1,0 +1,23 @@
+{
+  "name": "online-28-card-game",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "pnpm --filter @twenty-eight/web test:e2e",
+    "typecheck": "tsc -b",
+    "dev:server": "pnpm --filter @twenty-eight/server dev",
+    "dev:web": "pnpm --filter @twenty-eight/web dev"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "latest",
+    "@vitejs/plugin-react": "^4.4.1",
+    "jsdom": "^26.1.0",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
