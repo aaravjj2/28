@@ -8,11 +8,12 @@ import { ErrorBanner } from "./ErrorBanner";
 import { MatchOverScreen, RoundSummary, TrumpStatus } from "./RoundSummary";
 import { PlayerHand } from "./PlayerHand";
 import { TrumpSelectionPanel } from "./TrumpSelectionPanel";
+import { TurnTimerDisplay } from "./TurnTimerDisplay";
 
 const SEATS: Seat[] = [0, 1, 2, 3];
 
 export function GameScreen() {
-  const { gameState, playerId, playCard, loading } = useGame();
+  const { gameState, playerId, playCard, loading, leaveRoom } = useGame();
   if (!gameState) {
     return (
       <div className="page">
@@ -35,6 +36,8 @@ export function GameScreen() {
       </div>
 
       <ErrorBanner />
+
+      {loading ? <p className="waiting-banner">Waiting for server…</p> : null}
 
       <div className="table-meta">
         <div className="meta-box">
@@ -65,6 +68,7 @@ export function GameScreen() {
           <strong>Tricks played</strong>
           <div>{gameState.completedTricks.length}</div>
         </div>
+        <TurnTimerDisplay />
         {gameState.declarerPlayerId ? (
           <div className="meta-box">
             <strong>Declarer</strong>
@@ -140,6 +144,12 @@ export function GameScreen() {
           />
         </div>
       ) : null}
+
+      <div className="button-row" style={{ marginTop: "1rem" }}>
+        <button type="button" className="btn-secondary" disabled={loading} onClick={() => void leaveRoom()}>
+          Leave room
+        </button>
+      </div>
     </div>
   );
 }

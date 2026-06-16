@@ -98,6 +98,12 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
+.waiting-banner {
+  color: #ffe8a3;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;

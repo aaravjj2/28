@@ -7,6 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "pnpm --filter @twenty-eight/web test:e2e",
+    "test:all": "pnpm typecheck && pnpm test && pnpm test:e2e",
     "typecheck": "tsc -b",
     "dev:server": "pnpm --filter @twenty-eight/server dev",
     "dev:web": "pnpm --filter @twenty-eight/web dev"

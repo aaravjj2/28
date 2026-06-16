@@ -48,17 +48,14 @@ function emitEvents(io: Server, roomCode: string, roomManager: RoomManager, sock
     return;
   }
 
-  for (const player of room.players.values()) {
-    if (!player.socketId) {
-      continue;
-    }
-    const publicState = getPublicStateForPlayer(room, player.id);
-    if (publicState && player.socketId === socket.id) {
-      socket.emit("hand_dealt", {
-        dealPhase: room.game?.playState ? "remaining" : "initial",
-        myHand: publicState.myHand,
-      });
-    }
+  const dealPhase = room.game?.playState ? "remaining" : "initial";
+  socket.emit("hand_dealt", { dealPhase });
+}
+
+function setTurnDeadline(roomManager: RoomManager, roomCode: string, deadlineAt: number | null): void {
+  const room = roomManager.getRoom(roomCode);
+  if (room) {
+    room.turnDeadlineAt = deadlineAt;
   }
 }
 
@@ -70,26 +67,31 @@ function scheduleTurnTimer(
 ): void {
   const room = roomManager.getRoom(roomCode);
   if (!room?.game) {
+    setTurnDeadline(roomManager, roomCode, null);
     return;
   }
 
   const phase = room.game.state.phase;
   if (phase !== "BIDDING" && phase !== "PLAYING_TRICKS") {
     timerManager.clear(roomCode);
+    setTurnDeadline(roomManager, roomCode, null);
+    emitRoomState(io, roomCode, roomManager);
     return;
   }
 
   const currentSeat = room.game.state.currentTurnSeat;
   if (currentSeat === null) {
+    setTurnDeadline(roomManager, roomCode, null);
     return;
   }
 
   const currentPlayerId = room.seats[currentSeat];
   if (!currentPlayerId) {
+    setTurnDeadline(roomManager, roomCode, null);
     return;
   }
 
-  timerManager.start(roomCode, currentPlayerId, phase, () => {
+  const timer = timerManager.start(roomCode, currentPlayerId, phase, () => {
     const result =
       phase === "BIDDING"
         ? roomManager.autoPassBid(roomCode)
@@ -99,9 +101,13 @@ function scheduleTurnTimer(
       return;
     }
 
+    setTurnDeadline(roomManager, roomCode, null);
     emitRoomState(io, roomCode, roomManager);
     scheduleTurnTimer(io, roomManager, timerManager, roomCode);
   });
+
+  setTurnDeadline(roomManager, roomCode, timer.deadlineAt);
+  emitRoomState(io, roomCode, roomManager);
 }
 
 export function registerSocketHandlers(
@@ -267,6 +273,7 @@ export function registerSocketHandlers(
       delete socket.data.playerId;
       delete socket.data.sessionToken;
       timerManager.clear(context.roomCode);
+      setTurnDeadline(roomManager, context.roomCode, null);
       emitRoomState(io, context.roomCode, roomManager);
       ack?.({ ok: true });
     });
@@ -534,6 +541,7 @@ export function registerSocketHandlers(
       }
 
       timerManager.clear(context.roomCode);
+      setTurnDeadline(roomManager, context.roomCode, null);
       emitRoomState(io, context.roomCode, roomManager);
       ack?.({ ok: true });
     });

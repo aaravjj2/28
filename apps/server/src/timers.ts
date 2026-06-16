@@ -10,17 +10,27 @@ export type TurnTimer = {
 
 export class TurnTimerManager {
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  private readonly deadlines = new Map<string, number>();
   private readonly timeoutMs: number;
 
   constructor(timeoutMs = DEFAULT_TURN_TIMEOUT_MS) {
     this.timeoutMs = timeoutMs;
   }
 
-  start(roomCode: string, playerId: string, phase: TurnTimer["phase"], onExpire: TurnTimerCallback): TurnTimer {
+  start(
+    roomCode: string,
+    playerId: string,
+    phase: TurnTimer["phase"],
+    onExpire: TurnTimerCallback
+  ): TurnTimer & { deadlineAt: number } {
     this.clear(roomCode);
+
+    const deadlineAt = Date.now() + this.timeoutMs;
+    this.deadlines.set(roomCode, deadlineAt);
 
     const timeout = setTimeout(() => {
       this.timers.delete(roomCode);
+      this.deadlines.delete(roomCode);
       onExpire();
     }, this.timeoutMs);
 
@@ -29,8 +39,13 @@ export class TurnTimerManager {
     return {
       playerId,
       phase,
+      deadlineAt,
       clear: () => this.clear(roomCode),
     };
+  }
+
+  getDeadline(roomCode: string): number | undefined {
+    return this.deadlines.get(roomCode);
   }
 
   clear(roomCode: string): void {
@@ -39,6 +54,7 @@ export class TurnTimerManager {
       clearTimeout(existing);
       this.timers.delete(roomCode);
     }
+    this.deadlines.delete(roomCode);
   }
 
   clearAll(): void {

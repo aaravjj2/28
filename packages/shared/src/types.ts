@@ -122,6 +122,7 @@ export type PublicGameState = {
     isHost: boolean;
   }>;
   roundResult?: RoundResult;
+  turnDeadlineAt?: string | null;
 };
 
 export const MIN_BID = 14;

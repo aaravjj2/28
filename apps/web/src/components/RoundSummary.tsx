@@ -67,12 +67,13 @@ export function RoundSummary() {
 }
 
 export function MatchOverScreen() {
-  const { gameState, matchWinner, isHost, rematch, loading } = useGame();
+  const { gameState, matchWinner, roundResult, isHost, rematch, loading } = useGame();
   if (!gameState || gameState.phase !== "MATCH_OVER") {
     return null;
   }
 
   const winner = matchWinner ?? (gameState.matchScore.teamA >= gameState.targetScore ? "A" : "B");
+  const result = roundResult ?? gameState.roundResult;
 
   return (
     <div className="card-panel">
@@ -81,6 +82,11 @@ export function MatchOverScreen() {
       <p>
         Final score: Team A {gameState.matchScore.teamA} — Team B {gameState.matchScore.teamB}
       </p>
+      {result ? (
+        <p>
+          Last round points: Team A {result.teamAPoints} — Team B {result.teamBPoints}
+        </p>
+      ) : null}
       {isHost ? (
         <button type="button" className="btn-primary" disabled={loading} onClick={() => void rematch()}>
           Rematch

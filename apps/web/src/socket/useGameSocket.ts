@@ -314,6 +314,39 @@ export function useGameSocket() {
     }
   }, [requestStateSync, update]);
 
+  const leaveRoom = useCallback(async () => {
+    const current = stateRef.current;
+    const inActiveGame =
+      current.screen === "game" &&
+      current.gameState?.phase !== "MATCH_OVER" &&
+      current.gameState?.phase !== "LOBBY";
+
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("leave_room");
+      disconnectSocket();
+      if (inActiveGame) {
+        setState({
+          ...initialState,
+          displayName: current.displayName,
+          connected: false,
+        });
+      } else {
+        clearSession();
+        setState({
+          ...initialState,
+          displayName: current.displayName,
+          connected: false,
+        });
+      }
+      getSocket().connect();
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Failed to leave room" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [update]);
+
   const leaveToHome = useCallback(() => {
     clearSession();
     disconnectSocket();
@@ -351,6 +384,7 @@ export function useGameSocket() {
     playCard,
     startNextRound,
     rematch,
+    leaveRoom,
     leaveToHome,
     clearError: () => update({ error: null }),
   };

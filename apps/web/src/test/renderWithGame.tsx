@@ -51,6 +51,7 @@ function createMockGame(overrides: MockGameOverrides = {}) {
     playCard: async () => undefined,
     startNextRound: async () => undefined,
     rematch: async () => undefined,
+    leaveRoom: async () => undefined,
     leaveToHome: () => undefined,
     clearError: () => undefined,
     ...overrides,

@@ -1,64 +1,177 @@
-# Online 28 Card Game — Codex Starter Pack
+# Online 28
 
-This pack is designed to be pasted into a new repo and used with OpenAI Codex, Cursor, or another coding agent.
+Online multiplayer web version of the Indian trick-taking card game **28**.
 
-Bottom line: build the deterministic game engine first. Do not build UI polish until engine tests and random simulations pass.
+This project is a social card game for friends. It is **not** a gambling app and has **no** real-money features, payments, wallets, or ranked wagering.
 
-## Recommended Build Order
+Repository: https://github.com/aaravjj2/28
 
-1. Implement shared card constants and types.
-2. Implement deck generation, shuffle, and deal.
-3. Implement bidding state machine.
-4. Implement trump selection and hidden trump serialization.
-5. Implement legal move validation.
-6. Implement trick resolution.
-7. Implement round scoring.
-8. Implement public state serialization.
-9. Add unit tests.
-10. Add 1,000-round simulation test.
-11. Build Socket.IO room server.
-12. Build minimal Next.js frontend.
-13. Add reconnection.
-14. Add timers.
-15. Add UI polish.
+## Rules of 28 (summary)
 
-## Suggested Stack
+- Four players in fixed partnerships: Seat 0 + Seat 2 (Team A) vs Seat 1 + Seat 3 (Team B).
+- 32-card deck (7 through Ace in four suits).
+- Each round: initial deal, bidding, hidden trump selection by declarer, remaining deal, eight tricks.
+- Card points in a round always total **28**.
+- First partnership to reach the match target score wins (default 6 match points).
 
-- TypeScript everywhere.
-- Node.js backend.
-- Socket.IO for multiplayer transport.
-- Next.js + React frontend.
-- Shared package for rules/types.
-- Vitest for unit and simulation tests.
-- pnpm workspace.
+## Architecture
 
-## Critical Rule
+Monorepo with three packages:
 
-The server must be authoritative. The client must never decide:
+| Package | Role |
+|---------|------|
+| `packages/shared` | Pure deterministic game engine (deal, bidding, legal moves, tricks, scoring, public state) |
+| `apps/server` | Authoritative Socket.IO server; validates intents and emits per-player public state |
+| `apps/web` | Dumb React client; renders server state and sends intents only |
 
-- Card ownership.
-- Legal moves.
-- Trick winner.
-- Trump state.
-- Score.
-- Turn order.
+The server owns all rules. The client never computes legal moves, trick winners, trump visibility, or scores.
 
-## How to Use With Codex
+## Tech stack
 
-1. Create a new empty repo.
-2. Copy this pack into the repo root.
-3. Open the repo in Codex/Cursor.
-4. Paste `.codex/MASTER_IMPLEMENTATION_PROMPT.md` into the coding agent.
-5. Tell it to complete `tasks/01-engine-first.md` before touching UI.
-6. Run tests after every major step.
+- TypeScript, pnpm workspaces
+- Node.js 20+ server with Socket.IO
+- React + Vite frontend
+- Vitest (unit/component/integration)
+- Playwright (E2E)
 
-## Definition of Done for MVP
+## Local setup
 
-MVP is not done until:
+```bash
+pnpm install
+cp .env.example .env
+```
 
-- Four players can complete a full match online.
-- Refresh/reconnect preserves seat and hand.
-- Hidden state is not leaked.
-- Every round totals exactly 28 card points.
-- No duplicate card exists in a round.
-- 1,000 automated random simulations pass.
+Run server and web in separate terminals:
+
+```bash
+pnpm dev:server
+pnpm dev:web
+```
+
+Open http://localhost:5173
+
+## Commands
+
+```bash
+pnpm typecheck      # TypeScript project references
+pnpm test           # Vitest unit/component/integration tests
+pnpm test:e2e       # Playwright browser tests
+pnpm test:all       # typecheck + test + e2e
+pnpm dev:server     # Socket.IO server on :3001
+pnpm dev:web        # Vite dev server on :5173
+```
+
+Build for production:
+
+```bash
+pnpm --filter @twenty-eight/web build
+pnpm --filter @twenty-eight/server start
+```
+
+## Environment variables
+
+Copy `.env.example` to `.env`.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NODE_ENV` | `development` | `production` enables strict CORS |
+| `PORT` | `3001` | Server port |
+| `WEB_ORIGIN` | `http://localhost:5173` | Allowed browser origin in production |
+| `VITE_SERVER_URL` | empty in dev | Socket URL for web build; empty uses Vite proxy |
+| `MATCH_TARGET_SCORE` | `6` | Match points to win (use `1` for fast E2E) |
+| `TURN_TIMEOUT_MS` | `30000` | Server turn timer |
+
+## Testing
+
+```bash
+pnpm test
+```
+
+Coverage includes:
+
+- Shared engine unit tests and 1,000 random simulation rounds
+- Server room lifecycle, hidden-state checks, illegal move rejection
+- React component tests
+- Playwright E2E: lobby → full round → reconnect → match finish
+
+## E2E testing
+
+```bash
+pnpm test:e2e
+```
+
+Playwright starts the server (`MATCH_TARGET_SCORE=1`) and Vite dev server automatically. E2E clicks only `.hand-card.legal` buttons enabled by server-provided `legalCardIds`.
+
+## Security model
+
+See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
+
+Highlights:
+
+- Server-authoritative play
+- Per-player `PublicGameState` serialization
+- Hidden trump, other hands, and deck order never sent to clients
+- Session token required for reconnection and actions
+
+## Hidden-state model
+
+Each player receives only:
+
+- Their own `myHand`
+- Other players' **hand counts**, not cards
+- Trump suit only when rules allow (declarer before reveal; everyone after reveal)
+- `legalCardIds` only on their turn during play
+
+## Deployment notes
+
+### Server
+
+1. Set `NODE_ENV=production`
+2. Set `PORT` (e.g. `3001`)
+3. Set `WEB_ORIGIN` to your deployed web URL (exact origin, no wildcard)
+4. Start: `pnpm --filter @twenty-eight/server start`
+5. Health check: `GET /health` → `{"status":"ok"}`
+
+### Web
+
+1. Build with `VITE_SERVER_URL=https://your-api.example.com`
+2. Serve `apps/web/dist` via any static host (Vercel, Netlify, S3+CDN, nginx)
+3. Ensure HTTPS and CORS origin match
+
+Example production env:
+
+```env
+NODE_ENV=production
+PORT=3001
+WEB_ORIGIN=https://28.example.com
+VITE_SERVER_URL=https://api.28.example.com
+```
+
+## Rematch behavior
+
+**Rematch preserves seats.** After match over, the host can rematch; all four connected players return to the lobby with the same seats. Match score resets when a new game starts.
+
+## Known MVP limitations
+
+- In-memory rooms only (lost on server restart)
+- No accounts or authentication beyond session tokens
+- No matchmaking, bots, voice chat, tournaments, or cosmetics
+- No Redis, persistent audit log, or collusion detection
+- Host does not auto-transfer mid-game if host disconnects
+- Single Node process (no horizontal scaling)
+
+## Future roadmap
+
+- Persistent rooms (Redis)
+- User accounts and friend invites
+- Spectator mode
+- Mobile layout polish
+- Production auth and rate limiting
+- Horizontal scaling with sticky sessions
+
+## Health endpoint
+
+```
+GET /health
+→ 200 {"status":"ok"}
+```

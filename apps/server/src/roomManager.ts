@@ -61,6 +61,10 @@ export type Room = {
   players: Map<string, RoomPlayer>;
   seats: Record<Seat, string | null>;
   game: RoomGame | null;
+  joinOrder: string[];
+  lastActivityAt: number;
+  turnDeadlineAt: number | null;
+  matchTargetScore: number;
 };
 
 export type ActionResult<T = void> =
@@ -126,6 +130,33 @@ function buildPlayersList(room: Room): Player[] {
   return players.sort((a, b) => a.seat - b.seat);
 }
 
+function touchRoomActivity(room: Room): void {
+  room.lastActivityAt = Date.now();
+}
+
+function transferHost(room: Room): void {
+  if (room.locked) {
+    return;
+  }
+
+  for (const player of room.players.values()) {
+    player.isHost = false;
+  }
+
+  const nextHostId = room.joinOrder.find((playerId) => {
+    const player = room.players.get(playerId);
+    return player?.connected;
+  });
+
+  if (nextHostId) {
+    const nextHost = room.players.get(nextHostId);
+    if (nextHost) {
+      nextHost.isHost = true;
+      room.hostPlayerId = nextHostId;
+    }
+  }
+}
+
 function createLobbyState(room: Room): GameState {
   return {
     phase: "LOBBY",
@@ -145,7 +176,7 @@ function createLobbyState(room: Room): GameState {
     completedTricks: [],
     roundNumber: 0,
     matchScore: { teamA: 0, teamB: 0 },
-    targetScore: DEFAULT_TARGET_SCORE,
+    targetScore: room.matchTargetScore,
   };
 }
 
@@ -234,7 +265,10 @@ export function getPublicStateForPlayer(room: Room, playerId: string): PublicGam
   const publicState = serializePublicState(room.game.state, playerId);
   const augmented: PublicGameState = { ...publicState };
 
-  if (room.game.lastRoundResult && room.game.state.phase === "ROUND_SCORING") {
+  if (
+    room.game.lastRoundResult &&
+    (room.game.state.phase === "ROUND_SCORING" || room.game.state.phase === "MATCH_OVER")
+  ) {
     augmented.roundResult = room.game.lastRoundResult;
   }
 
@@ -248,6 +282,10 @@ export function getPublicStateForPlayer(room: Room, playerId: string): PublicGam
     if (currentPlayerId === playerId) {
       augmented.legalCardIds = getLegalPlayMoves(room.game.playState, seat);
     }
+  }
+
+  if (room.turnDeadlineAt !== null) {
+    augmented.turnDeadlineAt = new Date(room.turnDeadlineAt).toISOString();
   }
 
   return augmented;
@@ -281,17 +319,31 @@ function validateSeated(player: RoomPlayer): ActionResult<Seat> {
   return { ok: true, data: player.seat };
 }
 
+export type RoomManagerOptions = {
+  matchTargetScore?: number;
+};
+
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   private readonly socketToPlayer = new Map<string, { roomCode: string; playerId: string }>();
   private readonly random: () => number;
+  private readonly matchTargetScore: number;
 
-  constructor(random: () => number = Math.random) {
+  constructor(random: () => number = Math.random, options: RoomManagerOptions = {}) {
     this.random = random;
+    this.matchTargetScore = options.matchTargetScore ?? DEFAULT_TARGET_SCORE;
   }
 
   getRoom(roomCode: string): Room | undefined {
     return this.rooms.get(roomCode.toUpperCase());
+  }
+
+  getRooms(): Map<string, Room> {
+    return this.rooms;
+  }
+
+  deleteRoom(roomCode: string): boolean {
+    return this.rooms.delete(roomCode.toUpperCase());
   }
 
   getPlayerContext(socketId: string): { roomCode: string; playerId: string } | undefined {
@@ -327,10 +379,15 @@ export class RoomManager {
       players: new Map([[playerId, player]]),
       seats: emptySeats(),
       game: null,
+      joinOrder: [playerId],
+      lastActivityAt: Date.now(),
+      turnDeadlineAt: null,
+      matchTargetScore: this.matchTargetScore,
     };
 
     this.rooms.set(roomCode, room);
     this.socketToPlayer.set(socketId, { roomCode, playerId });
+    touchRoomActivity(room);
 
     return {
       ok: true,
@@ -367,6 +424,7 @@ export class RoomManager {
       player.connected = true;
       player.socketId = socketId;
       this.socketToPlayer.set(socketId, { roomCode: room.code, playerId: player.id });
+      touchRoomActivity(room);
 
       return {
         ok: true,
@@ -396,7 +454,9 @@ export class RoomManager {
     };
 
     room.players.set(playerId, player);
+    room.joinOrder.push(playerId);
     this.socketToPlayer.set(socketId, { roomCode: room.code, playerId });
+    touchRoomActivity(room);
 
     return {
       ok: true,
@@ -439,6 +499,7 @@ export class RoomManager {
 
     player.seat = seat;
     validRoom.seats[seat] = playerId;
+    touchRoomActivity(validRoom);
 
     return { ok: true, data: undefined };
   }
@@ -458,11 +519,13 @@ export class RoomManager {
       if (oldSocketId) {
         this.socketToPlayer.delete(oldSocketId);
       }
+      touchRoomActivity(validRoom);
       return { ok: true, data: undefined };
     }
 
     if (player.seat !== null) {
       validRoom.seats[player.seat] = null;
+      player.seat = null;
     }
 
     if (player.socketId) {
@@ -470,16 +533,14 @@ export class RoomManager {
     }
 
     validRoom.players.delete(playerId);
+    validRoom.joinOrder = validRoom.joinOrder.filter((id) => id !== playerId);
+    player.isHost = false;
 
     if (validRoom.hostPlayerId === playerId) {
-      const nextHost = [...validRoom.players.values()].find((candidate) => candidate.connected);
-      if (nextHost) {
-        nextHost.isHost = true;
-        validRoom.hostPlayerId = nextHost.id;
-      }
+      transferHost(validRoom);
     }
 
-    player.isHost = false;
+    touchRoomActivity(validRoom);
 
     if (validRoom.players.size === 0) {
       this.rooms.delete(validRoom.code);
@@ -507,6 +568,14 @@ export class RoomManager {
 
     player.connected = false;
     player.socketId = null;
+
+    if (!room.locked) {
+      if (room.hostPlayerId === player.id) {
+        transferHost(room);
+      }
+    }
+
+    touchRoomActivity(room);
 
     return { ok: true, data: undefined };
   }
@@ -572,7 +641,7 @@ export class RoomManager {
       completedTricks: [],
       roundNumber: 1,
       matchScore: { teamA: 0, teamB: 0 },
-      targetScore: DEFAULT_TARGET_SCORE,
+      targetScore: this.matchTargetScore,
     };
 
     const biddingState = createBiddingState(dealerSeat);
@@ -588,6 +657,8 @@ export class RoomManager {
     syncBiddingToState(validRoom, game);
     validRoom.game = game;
     validRoom.locked = true;
+    validRoom.turnDeadlineAt = null;
+    touchRoomActivity(validRoom);
 
     return {
       ok: true,
@@ -872,6 +943,8 @@ export class RoomManager {
 
     validRoom.game = null;
     validRoom.locked = false;
+    validRoom.turnDeadlineAt = null;
+    touchRoomActivity(validRoom);
 
     return { ok: true, data: undefined };
   }

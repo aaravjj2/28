@@ -15,7 +15,7 @@ export function LobbyScreen() {
     startGame,
     isHost,
     loading,
-    leaveToHome,
+    leaveRoom,
   } = useGame();
 
   const members = gameState?.lobbyMembers ?? [];
@@ -108,7 +108,7 @@ export function LobbyScreen() {
         </div>
 
         <div className="button-row" style={{ marginTop: "1rem" }}>
-          <button type="button" className="btn-secondary" onClick={leaveToHome}>
+          <button type="button" className="btn-secondary" disabled={loading} onClick={() => void leaveRoom()}>
             Leave room
           </button>
         </div>

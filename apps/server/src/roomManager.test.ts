@@ -8,12 +8,15 @@ import {
 } from "@twenty-eight/shared";
 import { getPublicStateForPlayer, RoomManager } from "./roomManager";
 
-function createSeededManager(seed = 0.42): RoomManager {
+function createSeededManager(seed = 0.42, options?: { matchTargetScore?: number }): RoomManager {
   let value = seed;
-  return new RoomManager(() => {
-    value = (value * 1664525 + 1013904223) % 4294967296;
-    return value / 4294967296;
-  });
+  return new RoomManager(
+    () => {
+      value = (value * 1664525 + 1013904223) % 4294967296;
+      return value / 4294967296;
+    },
+    options
+  );
 }
 
 function setupFourPlayerRoom(manager: RoomManager) {
@@ -339,6 +342,45 @@ describe("RoomManager", () => {
     const room = manager.getRoom(roomCode)!;
     expect(room.seats[0]).toBe(hostPlayer.id);
     expect(room.players.get(hostPlayer.id)?.connected).toBe(false);
+  });
+
+  it("transfers host to earliest joined connected player when host leaves lobby", () => {
+    const manager = createSeededManager();
+    const { roomCode, players, hostPlayer } = setupFourPlayerRoom(manager);
+    const secondPlayer = players[1];
+    if (!secondPlayer?.result.ok) {
+      throw new Error("missing second player");
+    }
+
+    manager.leaveRoom(roomCode, hostPlayer.id, hostPlayer.sessionToken);
+    const room = manager.getRoom(roomCode);
+    expect(room?.hostPlayerId).toBe(secondPlayer.result.data.player.id);
+    expect(room?.players.get(secondPlayer.result.data.player.id)?.isHost).toBe(true);
+  });
+
+  it("rematch preserves seats and returns players to lobby", () => {
+    const manager = createSeededManager(0.42, { matchTargetScore: 1 });
+    const { roomCode, hostPlayer, players } = setupFourPlayerRoom(manager);
+    manager.startGame(roomCode, hostPlayer.id, hostPlayer.sessionToken);
+    completeBidding(manager, roomCode);
+    startPlay(manager, roomCode);
+    playOutRound(manager, roomCode);
+
+    const seatsBefore = { ...manager.getRoom(roomCode)!.seats };
+    const rematch = manager.rematch(roomCode, hostPlayer.id, hostPlayer.sessionToken);
+    expect(rematch.ok).toBe(true);
+
+    const room = manager.getRoom(roomCode)!;
+    expect(room.locked).toBe(false);
+    expect(room.game).toBeNull();
+    expect(room.seats).toEqual(seatsBefore);
+    expect(room.players.size).toBe(4);
+    for (const entry of players) {
+      if (!entry.result.ok) {
+        continue;
+      }
+      expect(room.players.has(entry.result.data.player.id)).toBe(true);
+    }
   });
 
   it("rejects invalid session token", () => {
