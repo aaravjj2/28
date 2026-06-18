@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { screen } from "@testing-library/react";
 import { RoundSummary } from "./RoundSummary";
 import { renderWithGame } from "../test/renderWithGame";
+import { sampleRoundResult } from "../test/sampleRoundResult";
 
 describe("RoundSummary", () => {
   it("displays scoring fields from server round result", () => {
@@ -11,6 +12,17 @@ describe("RoundSummary", () => {
       isHost: true,
       gameState: {
         phase: "ROUND_SCORING",
+        ruleProfileId: "standard_28",
+        thaniDeclared: false,
+        pairStatus: { bidderPairDeclared: false, defenderPairDeclared: false, adjustedBidTarget: 16 },
+        pointTracker: null,
+        stakeLevel: "normal",
+        stakeMultiplier: 1,
+        honoursStakeResolved: null,
+        redealEligible: false,
+        canRequestRedeal: false,
+        canDouble: false,
+        canRedouble: false,
         dealerSeat: 0,
         currentTurnSeat: null,
         players: [],
@@ -29,25 +41,9 @@ describe("RoundSummary", () => {
         roundNumber: 1,
         matchScore: { teamA: 1, teamB: 0 },
         targetScore: 6,
-        roundResult: {
-          biddingTeam: "A",
-          bid: 16,
-          declarerSeat: 0,
-          teamAPoints: 18,
-          teamBPoints: 10,
-          biddingTeamWon: true,
-          matchPointWinner: "A",
-        },
+        roundResult: sampleRoundResult,
       },
-      roundResult: {
-        biddingTeam: "A",
-        bid: 16,
-        declarerSeat: 0,
-        teamAPoints: 18,
-        teamBPoints: 10,
-        biddingTeamWon: true,
-        matchPointWinner: "A",
-      },
+      roundResult: sampleRoundResult,
     });
 
     expect(screen.getByText("16")).toBeInTheDocument();

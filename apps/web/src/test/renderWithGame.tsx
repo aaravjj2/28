@@ -47,10 +47,20 @@ function createMockGame(overrides: MockGameOverrides = {}) {
     startGame: async () => undefined,
     placeBid: async () => undefined,
     passBid: async () => undefined,
+    requestRedeal: async () => undefined,
+    doubleBid: async () => undefined,
+    redoubleBid: async () => undefined,
+    passStakeMultiplier: async () => undefined,
+    setRuleProfile: async () => undefined,
     selectTrump: async () => undefined,
+    declarePair: async () => undefined,
+    declareThani: async () => undefined,
+    skipThani: async () => undefined,
     playCard: async () => undefined,
     startNextRound: async () => undefined,
     rematch: async () => undefined,
+    addBot: async () => undefined,
+    removeBot: async () => undefined,
     leaveRoom: async () => undefined,
     leaveToHome: () => undefined,
     clearError: () => undefined,
@@ -63,6 +73,20 @@ export function renderWithGame(ui: ReactElement, overrides: MockGameOverrides = 
   return render(<GameSocketContext.Provider value={value}>{ui}</GameSocketContext.Provider>);
 }
 
+const defaultPublicFields = {
+  ruleProfileId: "standard_28" as const,
+  thaniDeclared: false,
+  pairStatus: { bidderPairDeclared: false, defenderPairDeclared: false, adjustedBidTarget: 0 },
+  pointTracker: null,
+  stakeLevel: null,
+  stakeMultiplier: 1,
+  honoursStakeResolved: null,
+  redealEligible: false,
+  canRequestRedeal: false,
+  canDouble: false,
+  canRedouble: false,
+};
+
 export function makeLobbyState(seatedCount: number): PublicGameState {
   const lobbyMembers = Array.from({ length: seatedCount }, (_, seat) => ({
     id: `player-${seat}`,
@@ -73,6 +97,7 @@ export function makeLobbyState(seatedCount: number): PublicGameState {
   }));
 
   return {
+    ...defaultPublicFields,
     phase: "LOBBY",
     dealerSeat: 0,
     currentTurnSeat: null,
@@ -98,6 +123,21 @@ export function makeLobbyState(seatedCount: number): PublicGameState {
 
 export function makePlayingState(legalCardIds?: string[]): PublicGameState {
   return {
+    ...defaultPublicFields,
+    stakeLevel: "normal" as const,
+    pointTracker: {
+      teamACaptured: 0,
+      teamBCaptured: 0,
+      biddingTeamCaptured: 0,
+      defendingTeamCaptured: 0,
+      pointsRemaining: 28,
+      bidTarget: 14,
+      adjustedBidTarget: 14,
+      stakeLevel: "normal",
+      stakePoints: 1,
+      stakeIfWin: 1,
+      stakeIfLose: 1,
+    },
     phase: "PLAYING_TRICKS",
     dealerSeat: 0,
     currentTurnSeat: 0,

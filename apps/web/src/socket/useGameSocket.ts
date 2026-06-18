@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PublicGameState, RoundResult, Seat, Suit, Team } from "@twenty-eight/shared";
+import type { PublicGameState, RoundResult, RuleProfileId, Seat, Suit, Team } from "@twenty-eight/shared";
 import { clearSession, loadSession, saveSession } from "../storage/session";
 import { disconnectSocket, emitWithAck, getSocket } from "./socketClient";
 
@@ -262,11 +262,70 @@ export function useGameSocket() {
     }
   }, [update]);
 
-  const selectTrump = useCallback(
-    async (suit: Suit) => {
+  const requestRedeal = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("request_redeal");
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Redeal failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [update]);
+
+  const doubleBid = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("double_bid");
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Double failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [update]);
+
+  const redoubleBid = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("redouble_bid");
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Redouble failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [update]);
+
+  const passStakeMultiplier = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("pass_stake_multiplier");
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Pass failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [update]);
+
+  const setRuleProfile = useCallback(
+    async (profileId: RuleProfileId) => {
       update({ loading: true, error: null });
       try {
-        await emitWithAck("select_trump", { suit });
+        await emitWithAck("set_rule_profile", { profileId });
+        requestStateSync();
+      } catch (error) {
+        update({ error: error instanceof Error ? error.message : "Profile update failed" });
+      } finally {
+        update({ loading: false });
+      }
+    },
+    [requestStateSync, update]
+  );
+
+  const selectTrump = useCallback(
+    async (suit: Suit, concealedCardId?: string) => {
+      update({ loading: true, error: null });
+      try {
+        await emitWithAck("select_trump", { suit, concealedCardId });
       } catch (error) {
         update({ error: error instanceof Error ? error.message : "Trump selection failed" });
       } finally {
@@ -275,6 +334,42 @@ export function useGameSocket() {
     },
     [update]
   );
+
+  const declarePair = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("declare_pair");
+      requestStateSync();
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Pair declaration failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [requestStateSync, update]);
+
+  const declareThani = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("declare_thani");
+      requestStateSync();
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Thani declaration failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [requestStateSync, update]);
+
+  const skipThani = useCallback(async () => {
+    update({ loading: true, error: null });
+    try {
+      await emitWithAck("skip_thani");
+      requestStateSync();
+    } catch (error) {
+      update({ error: error instanceof Error ? error.message : "Skip thani failed" });
+    } finally {
+      update({ loading: false });
+    }
+  }, [requestStateSync, update]);
 
   const playCard = useCallback(
     async (cardId: string) => {
@@ -347,6 +442,36 @@ export function useGameSocket() {
     }
   }, [update]);
 
+  const addBot = useCallback(
+    async (seat: Seat, difficulty: "random" | "heuristic" = "random") => {
+      update({ loading: true, error: null });
+      try {
+        await emitWithAck("add_bot", { seat, difficulty });
+        requestStateSync();
+      } catch (error) {
+        update({ error: error instanceof Error ? error.message : "Failed to add bot" });
+      } finally {
+        update({ loading: false });
+      }
+    },
+    [requestStateSync, update]
+  );
+
+  const removeBot = useCallback(
+    async (targetPlayerId: string) => {
+      update({ loading: true, error: null });
+      try {
+        await emitWithAck("remove_bot", { playerId: targetPlayerId });
+        requestStateSync();
+      } catch (error) {
+        update({ error: error instanceof Error ? error.message : "Failed to remove bot" });
+      } finally {
+        update({ loading: false });
+      }
+    },
+    [requestStateSync, update]
+  );
+
   const leaveToHome = useCallback(() => {
     clearSession();
     disconnectSocket();
@@ -380,10 +505,20 @@ export function useGameSocket() {
     startGame,
     placeBid,
     passBid,
+    requestRedeal,
+    doubleBid,
+    redoubleBid,
+    passStakeMultiplier,
+    setRuleProfile,
     selectTrump,
+    declarePair,
+    declareThani,
+    skipThani,
     playCard,
     startNextRound,
     rematch,
+    addBot,
+    removeBot,
     leaveRoom,
     leaveToHome,
     clearError: () => update({ error: null }),

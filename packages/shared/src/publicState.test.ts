@@ -5,6 +5,7 @@ import {
   serializePublicState,
   validateTrumpSelection,
 } from "./publicState";
+import { defaultGameStateFields } from "./gameStateDefaults";
 import type { GameState, Player } from "./types";
 
 function makePlayer(seat: 0 | 1 | 2 | 3): Player {
@@ -46,6 +47,7 @@ describe("publicState", () => {
       roundNumber: 1,
       matchScore: { teamA: 0, teamB: 0 },
       targetScore: 6,
+      ...defaultGameStateFields(),
     };
 
     const publicState = serializePublicState(state, "player-0");
@@ -80,6 +82,7 @@ describe("publicState", () => {
       roundNumber: 1,
       matchScore: { teamA: 0, teamB: 0 },
       targetScore: 6,
+      ...defaultGameStateFields(),
     };
 
     const publicState = serializePublicState(state, "player-1");

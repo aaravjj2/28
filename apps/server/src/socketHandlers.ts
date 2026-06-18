@@ -1,5 +1,13 @@
 import type { Server, Socket } from "socket.io";
-import type { Seat, Suit } from "@twenty-eight/shared";
+import type { Seat, Suit, RuleProfileId } from "@twenty-eight/shared";
+import { BotScheduler } from "./bots/botScheduler";
+import {
+  emitRoomState,
+  onBotActionComplete,
+  scheduleBotOrTurnTimer,
+  syncAfterPlayCard,
+  type GameSyncContext,
+} from "./bots/gameSync";
 import { getPublicStateForPlayer, RoomManager } from "./roomManager";
 import { TurnTimerManager } from "./timers";
 
@@ -23,27 +31,14 @@ function emitError(socket: Socket, message: string): void {
   socket.emit("error", { message });
 }
 
-function emitRoomState(io: Server, roomCode: string, roomManager: RoomManager): void {
-  const room = roomManager.getRoom(roomCode);
-  if (!room) {
-    return;
-  }
+function emitEvents(
+  context: GameSyncContext,
+  roomCode: string,
+  socket: Socket
+): void {
+  emitRoomState(context, roomCode);
 
-  for (const player of room.players.values()) {
-    if (!player.socketId) {
-      continue;
-    }
-    const publicState = getPublicStateForPlayer(room, player.id);
-    if (publicState) {
-      io.to(player.socketId).emit("room_state_updated", { state: publicState });
-    }
-  }
-}
-
-function emitEvents(io: Server, roomCode: string, roomManager: RoomManager, socket: Socket): void {
-  emitRoomState(io, roomCode, roomManager);
-
-  const room = roomManager.getRoom(roomCode);
+  const room = context.roomManager.getRoom(roomCode);
   if (!room) {
     return;
   }
@@ -52,69 +47,14 @@ function emitEvents(io: Server, roomCode: string, roomManager: RoomManager, sock
   socket.emit("hand_dealt", { dealPhase });
 }
 
-function setTurnDeadline(roomManager: RoomManager, roomCode: string, deadlineAt: number | null): void {
-  const room = roomManager.getRoom(roomCode);
-  if (room) {
-    room.turnDeadlineAt = deadlineAt;
-  }
-}
-
-function scheduleTurnTimer(
-  io: Server,
-  roomManager: RoomManager,
-  timerManager: TurnTimerManager,
-  roomCode: string
-): void {
-  const room = roomManager.getRoom(roomCode);
-  if (!room?.game) {
-    setTurnDeadline(roomManager, roomCode, null);
-    return;
-  }
-
-  const phase = room.game.state.phase;
-  if (phase !== "BIDDING" && phase !== "PLAYING_TRICKS") {
-    timerManager.clear(roomCode);
-    setTurnDeadline(roomManager, roomCode, null);
-    emitRoomState(io, roomCode, roomManager);
-    return;
-  }
-
-  const currentSeat = room.game.state.currentTurnSeat;
-  if (currentSeat === null) {
-    setTurnDeadline(roomManager, roomCode, null);
-    return;
-  }
-
-  const currentPlayerId = room.seats[currentSeat];
-  if (!currentPlayerId) {
-    setTurnDeadline(roomManager, roomCode, null);
-    return;
-  }
-
-  const timer = timerManager.start(roomCode, currentPlayerId, phase, () => {
-    const result =
-      phase === "BIDDING"
-        ? roomManager.autoPassBid(roomCode)
-        : roomManager.autoPlayCard(roomCode);
-
-    if (!result || !result.ok) {
-      return;
-    }
-
-    setTurnDeadline(roomManager, roomCode, null);
-    emitRoomState(io, roomCode, roomManager);
-    scheduleTurnTimer(io, roomManager, timerManager, roomCode);
-  });
-
-  setTurnDeadline(roomManager, roomCode, timer.deadlineAt);
-  emitRoomState(io, roomCode, roomManager);
-}
-
 export function registerSocketHandlers(
   io: Server,
   roomManager: RoomManager,
-  timerManager: TurnTimerManager
+  timerManager: TurnTimerManager,
+  botScheduler: BotScheduler
 ): void {
+  const sync: GameSyncContext = { io, roomManager, timerManager, botScheduler };
+
   io.on("connection", (socket) => {
     socket.on("create_room", (payload: { displayName?: string }, ack?: (response: unknown) => void) => {
       const displayName = payload?.displayName?.trim();
@@ -143,7 +83,7 @@ export function registerSocketHandlers(
         sessionToken: player.sessionToken,
       });
 
-      emitRoomState(io, roomCode, roomManager);
+      emitRoomState(sync, roomCode);
       ack?.({
         ok: true,
         roomCode,
@@ -207,7 +147,7 @@ export function registerSocketHandlers(
           socket.emit("room_state_updated", { state: publicState });
         }
 
-        emitRoomState(io, room.code, roomManager);
+        emitRoomState(sync, room.code);
         ack?.({
           ok: true,
           roomCode: room.code,
@@ -244,7 +184,7 @@ export function registerSocketHandlers(
         return;
       }
 
-      emitRoomState(io, context.roomCode, roomManager);
+      emitRoomState(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -273,8 +213,8 @@ export function registerSocketHandlers(
       delete socket.data.playerId;
       delete socket.data.sessionToken;
       timerManager.clear(context.roomCode);
-      setTurnDeadline(roomManager, context.roomCode, null);
-      emitRoomState(io, context.roomCode, roomManager);
+      botScheduler.clear(context.roomCode);
+      emitRoomState(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -299,8 +239,8 @@ export function registerSocketHandlers(
       }
 
       socket.emit("game_started", { roomCode: context.roomCode });
-      emitEvents(io, context.roomCode, roomManager, socket);
-      scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
+      emitEvents(sync, context.roomCode, socket);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -332,8 +272,8 @@ export function registerSocketHandlers(
       }
 
       socket.emit("bidding_updated", { roomCode: context.roomCode });
-      emitRoomState(io, context.roomCode, roomManager);
-      scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -358,12 +298,126 @@ export function registerSocketHandlers(
       }
 
       socket.emit("bidding_updated", { roomCode: context.roomCode });
-      emitRoomState(io, context.roomCode, roomManager);
-      scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
-    socket.on("select_trump", (payload: { suit?: Suit }, ack?: (response: unknown) => void) => {
+    socket.on("request_redeal", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.requestRedeal(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitEvents(sync, context.roomCode, socket);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("double_bid", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.doubleBid(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("redouble_bid", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.redoubleBid(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("pass_stake_multiplier", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.passStakeMultiplier(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on(
+      "set_rule_profile",
+      (payload: { profileId?: RuleProfileId }, ack?: (response: unknown) => void) => {
+        const context = getContext(socket);
+        if (!context) {
+          ack?.({ ok: false, error: "Not authenticated" });
+          return;
+        }
+        if (!payload?.profileId) {
+          ack?.({ ok: false, error: "Profile id is required" });
+          return;
+        }
+        const result = roomManager.setRuleProfile(
+          context.roomCode,
+          context.playerId,
+          context.sessionToken,
+          payload.profileId
+        );
+        if (!result.ok) {
+          emitError(socket, result.error);
+          ack?.({ ok: false, error: result.error });
+          return;
+        }
+        emitRoomState(sync, context.roomCode);
+        ack?.({ ok: true });
+      }
+    );
+
+    socket.on(
+      "select_trump",
+      (payload: { suit?: Suit; concealedCardId?: string }, ack?: (response: unknown) => void) => {
       const context = getContext(socket);
       if (!context) {
         emitError(socket, "Not authenticated");
@@ -381,7 +435,8 @@ export function registerSocketHandlers(
         context.roomCode,
         context.playerId,
         context.sessionToken,
-        payload.suit
+        payload.suit,
+        payload.concealedCardId
       );
 
       if (!result.ok) {
@@ -391,8 +446,73 @@ export function registerSocketHandlers(
       }
 
       socket.emit("trump_selected_hidden", { roomCode: context.roomCode });
-      emitEvents(io, context.roomCode, roomManager, socket);
-      scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
+      emitEvents(sync, context.roomCode, socket);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("declare_pair", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.declarePair(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitEvents(sync, context.roomCode, socket);
+      emitRoomState(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("declare_thani", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.declareThani(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitEvents(sync, context.roomCode, socket);
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
+      ack?.({ ok: true });
+    });
+
+    socket.on("skip_thani", (_payload: unknown, ack?: (response: unknown) => void) => {
+      const context = getContext(socket);
+      if (!context) {
+        ack?.({ ok: false, error: "Not authenticated" });
+        return;
+      }
+      const result = roomManager.skipThaniAndPlay(
+        context.roomCode,
+        context.playerId,
+        context.sessionToken
+      );
+      if (!result.ok) {
+        emitError(socket, result.error);
+        ack?.({ ok: false, error: result.error });
+        return;
+      }
+      emitEvents(sync, context.roomCode, socket);
+      emitRoomState(sync, context.roomCode);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -441,28 +561,83 @@ export function registerSocketHandlers(
       }
 
       socket.emit("trick_updated", { roomCode: context.roomCode });
-      emitRoomState(io, context.roomCode, roomManager);
-
-      if (roomAfter?.game?.state.phase === "ROUND_SCORING" && roomAfter.game.lastRoundResult) {
-        io.to(context.roomCode).emit("round_completed", {
-          roomCode: context.roomCode,
-          result: roomAfter.game.lastRoundResult,
-        });
-      }
-
-      if (roomAfter?.game?.state.phase === "MATCH_OVER") {
-        const winner =
-          roomAfter.game.state.matchScore.teamA >= roomAfter.game.state.targetScore
-            ? "A"
-            : "B";
-        io.to(context.roomCode).emit("match_completed", { roomCode: context.roomCode, winner });
-        timerManager.clear(context.roomCode);
-      } else {
-        scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
-      }
+      syncAfterPlayCard(sync, context.roomCode, {
+        trumpRevealed: trumpRevealedBefore,
+        tricksCount: tricksBefore,
+      });
 
       ack?.({ ok: true });
     });
+
+    socket.on(
+      "add_bot",
+      (payload: { seat?: number; difficulty?: "random" | "heuristic" }, ack?: (response: unknown) => void) => {
+        const context = getContext(socket);
+        if (!context) {
+          emitError(socket, "Not authenticated");
+          ack?.({ ok: false, error: "Not authenticated" });
+          return;
+        }
+
+        if (payload?.seat !== 0 && payload?.seat !== 1 && payload?.seat !== 2 && payload?.seat !== 3) {
+          emitError(socket, "Invalid seat");
+          ack?.({ ok: false, error: "Invalid seat" });
+          return;
+        }
+
+        const difficulty = payload?.difficulty === "heuristic" ? "heuristic" : "random";
+        const result = roomManager.addBot(
+          context.roomCode,
+          context.playerId,
+          context.sessionToken,
+          payload.seat as Seat,
+          difficulty
+        );
+
+        if (!result.ok) {
+          emitError(socket, result.error);
+          ack?.({ ok: false, error: result.error });
+          return;
+        }
+
+        emitRoomState(sync, context.roomCode);
+        ack?.({ ok: true, playerId: result.data?.playerId });
+      }
+    );
+
+    socket.on(
+      "remove_bot",
+      (payload: { playerId?: string }, ack?: (response: unknown) => void) => {
+        const context = getContext(socket);
+        if (!context) {
+          emitError(socket, "Not authenticated");
+          ack?.({ ok: false, error: "Not authenticated" });
+          return;
+        }
+
+        if (!payload?.playerId) {
+          emitError(socket, "Player id is required");
+          ack?.({ ok: false, error: "Player id is required" });
+          return;
+        }
+
+        const result = roomManager.removeBot(
+          context.roomCode,
+          context.playerId,
+          context.sessionToken,
+          payload.playerId
+        );
+
+        if (!result.ok) {
+          emitError(socket, result.error);
+          ack?.({ ok: false, error: result.error });
+          return;
+        }
+
+        emitRoomState(sync, context.roomCode);
+        ack?.({ ok: true });
+      }
+    );
 
     socket.on("request_state_sync", (_payload: unknown, ack?: (response: unknown) => void) => {
       const context = getContext(socket);
@@ -515,8 +690,8 @@ export function registerSocketHandlers(
         return;
       }
 
-      emitEvents(io, context.roomCode, roomManager, socket);
-      scheduleTurnTimer(io, roomManager, timerManager, context.roomCode);
+      emitEvents(sync, context.roomCode, socket);
+      scheduleBotOrTurnTimer(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -541,8 +716,8 @@ export function registerSocketHandlers(
       }
 
       timerManager.clear(context.roomCode);
-      setTurnDeadline(roomManager, context.roomCode, null);
-      emitRoomState(io, context.roomCode, roomManager);
+      botScheduler.clear(context.roomCode);
+      emitRoomState(sync, context.roomCode);
       ack?.({ ok: true });
     });
 
@@ -550,7 +725,7 @@ export function registerSocketHandlers(
       const context = getContext(socket);
       roomManager.handleDisconnect(socket.id);
       if (context) {
-        emitRoomState(io, context.roomCode, roomManager);
+        emitRoomState(sync, context.roomCode);
       }
     });
   });

@@ -3,6 +3,7 @@ import {
   assertPublicStateHasNoHiddenLeaks,
   getLegalBidActions,
   getLegalPlayMoves,
+  isAuctionReadyForTrump,
   SUITS,
   type Seat,
 } from "@twenty-eight/shared";
@@ -198,7 +199,13 @@ describe("RoomManager", () => {
     const declarerId = room.game!.state.declarerPlayerId!;
     const declarerHand = room.game!.state.handsByPlayerId[declarerId] ?? [];
     const trumpSuit = SUITS.find((suit) => declarerHand.some((card) => card.suit === suit))!;
-    manager.selectTrump(roomCode, declarerId, room.players.get(declarerId)!.sessionToken, trumpSuit);
+    manager.selectTrump(
+      roomCode,
+      declarerId,
+      room.players.get(declarerId)!.sessionToken,
+      trumpSuit,
+      declarerHand.find((card) => card.suit === trumpSuit)!.id
+    );
 
     const refreshed = manager.getRoom(roomCode)!;
     for (const [playerId] of refreshed.players) {
@@ -408,12 +415,23 @@ function completeBidding(manager: RoomManager, roomCode: string): void {
   while (safety < 40) {
     const room = manager.getRoom(roomCode);
     const bidding = room?.game?.biddingState;
-    if (!bidding || bidding.complete) {
+    if (!bidding || isAuctionReadyForTrump(bidding)) {
       return;
     }
     const seat = bidding.currentTurnSeat;
     const playerId = room!.seats[seat]!;
     const token = room!.players.get(playerId)!.sessionToken;
+
+    if (
+      room!.game!.state.phase === "STAKE_MULTIPLIER" ||
+      bidding.stakeMultiplierPhase === "defender" ||
+      bidding.stakeMultiplierPhase === "bidder"
+    ) {
+      manager.passStakeMultiplier(roomCode, playerId, token);
+      safety += 1;
+      continue;
+    }
+
     const actions = getLegalBidActions(bidding, seat);
     const action = actions.includes("PASS") ? "PASS" : actions[0];
     if (action === "PASS") {
@@ -430,7 +448,8 @@ function startPlay(manager: RoomManager, roomCode: string): void {
   const declarerId = room.game!.state.declarerPlayerId!;
   const declarerHand = room.game!.state.handsByPlayerId[declarerId] ?? [];
   const trumpSuit = SUITS.find((suit) => declarerHand.some((card) => card.suit === suit))!;
-  manager.selectTrump(roomCode, declarerId, room.players.get(declarerId)!.sessionToken, trumpSuit);
+  const concealedCardId = declarerHand.find((card) => card.suit === trumpSuit)!.id;
+  manager.selectTrump(roomCode, declarerId, room.players.get(declarerId)!.sessionToken, trumpSuit, concealedCardId);
 }
 
 function playOutRound(manager: RoomManager, roomCode: string): void {

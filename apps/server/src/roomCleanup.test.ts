@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultGameStateFields } from "@twenty-eight/shared";
 import type { Room } from "./roomManager";
 import { cleanupStaleRooms, EMPTY_LOBBY_TTL_MS, INACTIVE_ROOM_TTL_MS, shouldDeleteRoom } from "./roomCleanup";
 
@@ -14,6 +15,8 @@ function makeRoom(overrides: Partial<Room> = {}): Room {
     lastActivityAt: Date.now(),
     turnDeadlineAt: null,
     matchTargetScore: 6,
+    ruleProfileId: "standard_28",
+    thaniEnabled: true,
     ...overrides,
   };
 }
@@ -48,6 +51,7 @@ describe("roomCleanup", () => {
           roundNumber: 1,
           matchScore: { teamA: 0, teamB: 0 },
           targetScore: 6,
+          ...defaultGameStateFields(),
         },
         deck: [],
         roundHands: { 0: [], 1: [], 2: [], 3: [] },
@@ -84,6 +88,7 @@ describe("roomCleanup", () => {
           roundNumber: 1,
           matchScore: { teamA: 1, teamB: 0 },
           targetScore: 1,
+          ...defaultGameStateFields(),
         },
         deck: [],
         roundHands: { 0: [], 1: [], 2: [], 3: [] },

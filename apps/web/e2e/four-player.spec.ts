@@ -31,17 +31,17 @@ test("four players can create, join, seat, and start without seeing other hands"
   await pages[0]!.getByRole("button", { name: "Start Game" }).click();
 
   for (const page of pages) {
-    const phaseBox = page.locator(".meta-box").filter({ hasText: "Phase" });
-    await expect(phaseBox).toContainText(/BIDDING|PLAYING_TRICKS|TRUMP_SELECTION/, {
+    const phaseEl = page.locator("[data-testid='game-phase']");
+    await expect(phaseEl).toHaveAttribute("data-phase", /BIDDING|PLAYING_TRICKS|TRUMP_SELECTION/, {
       timeout: 15_000,
     });
   }
 
   for (const page of pages) {
     await expect(page.getByRole("heading", { name: "Table" })).toBeVisible();
-    await expect(page.getByText("Seat 0")).toBeVisible();
-    const handButtons = page.locator(".hand-card");
-    expect(await handButtons.count()).toBe(0);
+    await expect(page.locator(".felt-table")).toBeVisible();
+    const handButtons = page.locator(".player-hand-zone .hand-card-btn");
+    expect(await handButtons.count()).toBeGreaterThan(0);
   }
 
   for (const context of contexts) {

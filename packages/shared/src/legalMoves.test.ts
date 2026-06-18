@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createDeck } from "./cards";
 import {
   applyPlay,
-  getLegalMoves,
+  getLegalMovesLegacy,
   shouldRevealTrump,
-  validatePlay,
+  validatePlayLegacy,
 } from "./legalMoves";
 import type { PlayedCard } from "./types";
 
@@ -29,12 +29,12 @@ describe("legalMoves", () => {
       },
     ];
 
-    const legal = getLegalMoves(hand, currentTrick, "diamonds", false);
+    const legal = getLegalMovesLegacy(hand, currentTrick, "diamonds", false);
     expect(legal).toHaveLength(1);
     expect(legal[0]?.id).toBe(heartsJack.id);
 
-    expect(validatePlay(hand, currentTrick, spadesAce.id, "diamonds", false).ok).toBe(false);
-    expect(validatePlay(hand, currentTrick, heartsJack.id, "diamonds", false).ok).toBe(true);
+    expect(validatePlayLegacy(hand, currentTrick, spadesAce.id, "diamonds", false).ok).toBe(false);
+    expect(validatePlayLegacy(hand, currentTrick, heartsJack.id, "diamonds", false).ok).toBe(true);
   });
 
   it("allows any card when void in led suit", () => {
@@ -47,7 +47,7 @@ describe("legalMoves", () => {
       },
     ];
 
-    const legal = getLegalMoves(hand, currentTrick, "diamonds", false);
+    const legal = getLegalMovesLegacy(hand, currentTrick, "diamonds", false);
     expect(legal).toHaveLength(2);
   });
 
@@ -62,7 +62,7 @@ describe("legalMoves", () => {
     ];
 
     expect(
-      shouldRevealTrump(spadesAce, hand, "hearts", "spades", false)
+      shouldRevealTrump(spadesAce, hand, "hearts", "spades", false, null)
     ).toBe(true);
 
     const result = applyPlay(
@@ -71,8 +71,15 @@ describe("legalMoves", () => {
       1,
       "p1",
       spadesAce.id,
-      "spades",
-      false
+      {
+        seat: 1,
+        declarerSeat: 0,
+        trumpSuit: "spades",
+        trumpRevealed: false,
+        concealedTrumpCard: null,
+        ledSuitIsConcealedTrump: false,
+        mustLeadConcealedTrump: false,
+      }
     );
 
     expect(result.trumpRevealed).toBe(true);

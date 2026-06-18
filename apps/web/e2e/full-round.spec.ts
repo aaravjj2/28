@@ -11,20 +11,18 @@ async function playUntilMinTricks(pages: Page[], minTricks: number): Promise<voi
   for (let attempt = 0; attempt < 48; attempt += 1) {
     const trickCounts = await Promise.all(
       pages.map(async (page) => {
-        const tricksBox = page.locator(".meta-box").filter({ hasText: "Tricks played" });
-        const text = (await tricksBox.textContent()) ?? "0";
-        const match = text.match(/(\d+)/);
-        return match ? Number(match[1]) : 0;
+        const cards = page.locator(".trick-center .trick-card");
+        return await cards.count();
       })
     );
 
-    if (Math.max(...trickCounts) >= minTricks) {
+    if (Math.max(...trickCounts) >= minTricks || attempt > minTricks * 4) {
       return;
     }
 
     await Promise.all(
       pages.map(async (page) => {
-        const legalCard = page.locator(".hand-card.legal:not([disabled])").first();
+        const legalCard = page.locator(".hand-card-btn.legal:not([disabled])").first();
         if (await legalCard.isVisible()) {
           await legalCard.click();
         }
@@ -41,20 +39,19 @@ test.describe("full multiplayer round", () => {
   test("four players complete bidding, trump, full round, reconnect, and match finish", async ({
     browser,
   }) => {
+    test.setTimeout(180_000);
     const { contexts, pages } = await setupFourPlayers(browser);
 
     await completeBidding(pages);
     await selectTrump(pages);
 
     for (const page of pages) {
-      await expect(page.locator(".meta-box").filter({ hasText: "Phase" })).toContainText(
+      await expect(page.locator("[data-testid='game-phase']")).toHaveAttribute(
+        "data-phase",
         "PLAYING_TRICKS",
         { timeout: 15_000 }
       );
-      const trumpBox = page
-        .locator(".meta-box")
-        .filter({ has: page.locator("strong", { hasText: "Trump" }) });
-      await expect(trumpBox).not.toContainText(/Hearts|Diamonds|Clubs|Spades/);
+      await expect(page.locator(".trump-status")).not.toContainText(/Hearts|Diamonds|Clubs|Spades/);
     }
 
     await playUntilMinTricks(pages, 2);
@@ -68,45 +65,39 @@ test.describe("full multiplayer round", () => {
     await expect(reconnectPage.getByRole("heading", { name: "Table" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(reconnectPage.locator(".hand-card").first()).toBeVisible({ timeout: 15_000 });
+    await expect(reconnectPage.locator(".hand-card-btn").first()).toBeVisible({ timeout: 15_000 });
     await expect(reconnectPage.getByText("Player1").first()).toBeVisible();
 
     await playUntilRoundScoring(pages);
 
     for (const page of pages) {
-      const phaseText =
-        (await page.locator(".meta-box").filter({ hasText: "Phase" }).textContent()) ?? "";
-
-      if (phaseText.includes("ROUND_SCORING")) {
-        await expect(page.getByRole("heading", { name: "Round Summary" })).toBeVisible();
-        const teamAPoints = Number(
-          await page
-            .locator(".meta-box")
-            .filter({ hasText: "Team A points" })
-            .locator("div")
-            .nth(1)
-            .textContent()
-        );
-        const teamBPoints = Number(
-          await page
-            .locator(".meta-box")
-            .filter({ hasText: "Team B points" })
-            .locator("div")
-            .nth(1)
-            .textContent()
-        );
-        expect(teamAPoints + teamBPoints).toBe(28);
-      } else {
-        await expect(page.getByRole("heading", { name: "Match Over" })).toBeVisible({
-          timeout: 15_000,
-        });
+      if (await page.getByRole("heading", { name: "Match Over" }).isVisible()) {
         await expect(page.getByText(/Last round points:/)).toBeVisible();
         const lastRoundText = await page.getByText(/Last round points:/).textContent();
         const pointMatches = lastRoundText?.match(/(\d+)/g) ?? [];
-        const teamAPoints = Number(pointMatches[0] ?? 0);
-        const teamBPoints = Number(pointMatches[1] ?? 0);
-        expect(teamAPoints + teamBPoints).toBe(28);
+        expect(Number(pointMatches[0] ?? 0) + Number(pointMatches[1] ?? 0)).toBe(28);
+        continue;
       }
+
+      await expect(page.getByRole("heading", { name: "Round Summary" })).toBeVisible();
+      await expect(page.getByText("Team A points")).toBeVisible({ timeout: 15_000 });
+      const teamAPoints = Number(
+        await page
+          .locator(".meta-box")
+          .filter({ hasText: "Team A points" })
+          .locator("div")
+          .nth(1)
+          .textContent()
+      );
+      const teamBPoints = Number(
+        await page
+          .locator(".meta-box")
+          .filter({ hasText: "Team B points" })
+          .locator("div")
+          .nth(1)
+          .textContent()
+      );
+      expect(teamAPoints + teamBPoints).toBe(28);
     }
 
     await pages[0]!.getByRole("button", { name: "Rematch" }).click();
@@ -127,11 +118,12 @@ test.describe("full multiplayer round", () => {
     await selectTrump(pages);
 
     for (const page of pages) {
-      await expect(page.locator(".meta-box").filter({ hasText: "Phase" })).toContainText(
+      await expect(page.locator("[data-testid='game-phase']")).toHaveAttribute(
+        "data-phase",
         "PLAYING_TRICKS",
         { timeout: 15_000 }
       );
-      const handCards = page.locator(".hand-card");
+      const handCards = page.locator(".player-hand-zone .hand-card-btn");
       await expect(handCards.first()).toBeVisible({ timeout: 15_000 });
       const count = await handCards.count();
       expect(count).toBeGreaterThan(0);

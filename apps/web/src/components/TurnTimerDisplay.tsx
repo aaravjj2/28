@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useGame } from "../context/GameContext";
 
-export function TurnTimerDisplay() {
+type TurnTimerDisplayProps = {
+  compact?: boolean;
+};
+
+export function TurnTimerDisplay({ compact = false }: TurnTimerDisplayProps) {
   const { gameState } = useGame();
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
@@ -23,6 +27,15 @@ export function TurnTimerDisplay() {
 
   if (secondsLeft === null) {
     return null;
+  }
+
+  if (compact) {
+    return (
+      <div className="info-row">
+        <span className="info-label">Timer</span>
+        <span className="info-value">{secondsLeft}s</span>
+      </div>
+    );
   }
 
   return (

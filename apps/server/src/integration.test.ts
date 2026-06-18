@@ -5,9 +5,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   getLegalBidActions,
   getLegalPlayMoves,
+  isAuctionReadyForTrump,
   SUITS,
   type Seat,
 } from "@twenty-eight/shared";
+import { BotScheduler } from "./bots/botScheduler";
 import { registerSocketHandlers } from "./socketHandlers";
 import { getPublicStateForPlayer, RoomManager } from "./roomManager";
 import { TurnTimerManager } from "./timers";
@@ -67,7 +69,8 @@ describe("server integration", () => {
     httpServer = createServer();
     io = new SocketServer(httpServer, { cors: { origin: "*" } });
     roomManager = new RoomManager(() => 0.5);
-    registerSocketHandlers(io, roomManager, new TurnTimerManager(60_000));
+    const botScheduler = new BotScheduler(roomManager, { instantActions: true });
+    registerSocketHandlers(io, roomManager, new TurnTimerManager(60_000), botScheduler);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, () => {
@@ -143,7 +146,7 @@ describe("server integration", () => {
     while (!biddingComplete && safety < 40) {
       const room = roomManager.getRoom(roomCode);
       const bidding = room?.game?.biddingState;
-      if (!bidding || bidding.complete) {
+      if (!bidding || isAuctionReadyForTrump(bidding)) {
         biddingComplete = true;
         break;
       }
@@ -152,6 +155,16 @@ describe("server integration", () => {
       const client = clients.find((entry) => entry.seat === seat);
       if (!client) {
         throw new Error(`Missing client for seat ${seat}`);
+      }
+
+      if (
+        room?.game?.state.phase === "STAKE_MULTIPLIER" ||
+        bidding.stakeMultiplierPhase === "defender" ||
+        bidding.stakeMultiplierPhase === "bidder"
+      ) {
+        await emitWithAck(client.socket, "pass_stake_multiplier");
+        safety += 1;
+        continue;
       }
 
       const actions = getLegalBidActions(bidding, seat);
@@ -179,8 +192,15 @@ describe("server integration", () => {
     if (!trumpSuit) {
       throw new Error("No trump suit available");
     }
+    const concealedCardId = declarerHand.find((card) => card.suit === trumpSuit)?.id;
+    if (!concealedCardId) {
+      throw new Error("No concealed trump card available");
+    }
 
-    await emitWithAck(declarerClient.socket, "select_trump", { suit: trumpSuit });
+    await emitWithAck(declarerClient.socket, "select_trump", {
+      suit: trumpSuit,
+      concealedCardId,
+    });
 
     const roomAfterTrump = roomManager.getRoom(roomCode)!;
     for (const client of clients) {

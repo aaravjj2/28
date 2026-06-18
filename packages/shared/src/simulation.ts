@@ -1,4 +1,4 @@
-import { applyBidAction, createBiddingState, getLegalBidActions } from "./bidding";
+import { applyBidAction, createBiddingState, getLegalBidActions, isAuctionReadyForTrump, applyStakeMultiplierAction } from "./bidding";
 import { SUITS } from "./cards";
 import {
   assertHandsValid,
@@ -42,9 +42,16 @@ function runBidding(
   let bidding = createBiddingState(dealerSeat);
   let safety = 0;
 
-  while (!bidding.complete) {
+  while (!isAuctionReadyForTrump(bidding)) {
     const seat = bidding.currentTurnSeat;
-    const actions = getLegalBidActions(bidding, seat);
+
+    if (bidding.stakeMultiplierPhase === "defender" || bidding.stakeMultiplierPhase === "bidder") {
+      bidding = applyStakeMultiplierAction(bidding, seat, "PASS");
+      safety += 1;
+      continue;
+    }
+
+    const actions = getLegalBidActions(bidding, seat).filter((action) => action !== "REDEAL");
     if (actions.length === 0) {
       throw new Error(`No legal bid actions for seat ${seat}`);
     }

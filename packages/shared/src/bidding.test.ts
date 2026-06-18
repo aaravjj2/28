@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   applyBidAction,
+  applyStakeMultiplierAction,
   createBiddingState,
   getLegalBidActions,
+  isAuctionReadyForTrump,
   validateBidAction,
 } from "./bidding";
 import { MAX_BID, MIN_BID } from "./types";
+
+function passStakePhases(state: ReturnType<typeof createBiddingState>) {
+  let next = state;
+  while (!isAuctionReadyForTrump(next)) {
+    if (next.stakeMultiplierPhase === "defender" || next.stakeMultiplierPhase === "bidder") {
+      next = applyStakeMultiplierAction(next, next.currentTurnSeat, "PASS");
+      continue;
+    }
+    break;
+  }
+  return next;
+}
 
 describe("bidding", () => {
   it("requires first bidder to open at least 14", () => {
@@ -46,6 +60,7 @@ describe("bidding", () => {
     state = applyBidAction(state, 2, "PASS");
     state = applyBidAction(state, 3, "PASS");
     state = applyBidAction(state, 0, "PASS");
+    state = passStakePhases(state);
 
     expect(state.complete).toBe(true);
     expect(state.declarerSeat).toBe(1);
@@ -61,6 +76,7 @@ describe("bidding", () => {
     state = applyBidAction(state, 0, "PASS");
     state = applyBidAction(state, 1, 17);
     state = applyBidAction(state, 2, "PASS");
+    state = passStakePhases(state);
 
     expect(state.complete).toBe(true);
     expect(state.declarerSeat).toBe(1);

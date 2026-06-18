@@ -147,8 +147,8 @@ describe("scoring", () => {
     expect(result.biddingTeamWon).toBe(true);
     expect(result.matchPointWinner).toBe("A");
 
-    const nextScore = applyMatchScore({ teamA: 0, teamB: 0 }, result.matchPointWinner!);
-    expect(nextScore.teamA).toBe(1);
+    const nextScore = applyMatchScore({ teamA: 0, teamB: 0 }, result);
+    expect(nextScore.teamA).toBe(result.matchPointsAwarded);
     expect(isMatchOver(nextScore, 6)).toBe(false);
   });
 });

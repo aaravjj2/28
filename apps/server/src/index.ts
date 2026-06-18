@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { loadServerConfig } from "./config";
 import { cleanupStaleRooms } from "./roomCleanup";
+import { BotScheduler } from "./bots/botScheduler";
 import { registerSocketHandlers } from "./socketHandlers";
 import { RoomManager } from "./roomManager";
 import { TurnTimerManager } from "./timers";
@@ -30,16 +31,21 @@ export function createApp() {
 
   const roomManager = new RoomManager(Math.random, {
     matchTargetScore: config.matchTargetScore,
+    ruleProfileId: config.ruleProfileId,
+    thaniEnabled: config.thaniEnabled,
   });
   const timerManager = new TurnTimerManager(config.turnTimeoutMs);
-  registerSocketHandlers(io, roomManager, timerManager);
+  const botScheduler = new BotScheduler(roomManager, {
+    instantActions: config.botInstantActions,
+  });
+  registerSocketHandlers(io, roomManager, timerManager, botScheduler);
 
   const cleanupTimer = setInterval(() => {
     cleanupStaleRooms(roomManager.getRooms());
   }, CLEANUP_INTERVAL_MS);
   cleanupTimer.unref();
 
-  return { httpServer, io, roomManager, timerManager, config, cleanupTimer };
+  return { httpServer, io, roomManager, timerManager, botScheduler, config, cleanupTimer };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

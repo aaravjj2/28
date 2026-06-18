@@ -1,6 +1,6 @@
 .app-shell {
   min-height: 100vh;
-  background: linear-gradient(180deg, #0f3d2e 0%, #145c43 45%, #0d2a20 100%);
+  background: linear-gradient(180deg, #0a1f18 0%, #0f3d2e 40%, #0a1f18 100%);
   color: #f5f7f6;
   font-family: Inter, system-ui, sans-serif;
 }
@@ -89,6 +89,12 @@ button:disabled {
   color: #fff;
 }
 
+.btn-compact {
+  min-height: 40px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
 .error-banner {
   background: rgba(178, 59, 59, 0.25);
   border: 1px solid #ff8d8d;
@@ -100,8 +106,9 @@ button:disabled {
 
 .waiting-banner {
   color: #ffe8a3;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
   font-weight: 600;
+  text-align: center;
 }
 
 .status-pill {
@@ -208,64 +215,12 @@ button:disabled {
   justify-content: center;
 }
 
-.playing-card {
-  width: 64px;
-  min-height: 88px;
-  border-radius: 10px;
-  background: #fff;
-  color: #111;
-  border: 2px solid #ddd;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  font-weight: 700;
-}
-
-.playing-card.red {
-  color: #c62828;
-}
-
-.hand-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: center;
-  padding: 0.5rem 0 1rem;
-}
-
-.hand-card {
-  min-width: 58px;
-  min-height: 82px;
-  border-radius: 10px;
-  border: 2px solid #ddd;
-  background: #fff;
-  color: #111;
-  font-weight: 700;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.hand-card.legal {
-  border-color: #f4c542;
-  box-shadow: 0 0 0 2px rgba(244, 197, 66, 0.35);
-}
-
-.hand-card:disabled {
-  opacity: 0.45;
-}
-
-.hand-card.red {
-  color: #c62828;
-}
-
 .bid-grid,
 .suit-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  justify-content: center;
 }
 
 .rules-content h2 {
@@ -276,6 +231,490 @@ button:disabled {
   padding-left: 1.2rem;
 }
 
+/* ── Game table (PokerNow-style) ── */
+
+.game-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 100%;
+  padding: 0.5rem;
+  margin: 0 auto;
+}
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+}
+
+.game-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.game-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.felt-table-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.game-info-panel {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 20;
+  width: min(168px, 42vw);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.72rem;
+  backdrop-filter: blur(6px);
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.15rem 0;
+}
+
+.info-row-trump {
+  justify-content: flex-start;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 0.2rem;
+}
+
+.info-label {
+  color: #a8c4b8;
+}
+
+.info-value {
+  font-weight: 600;
+  text-align: right;
+}
+
+.trump-status {
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.felt-table {
+  position: relative;
+  flex: 1;
+  min-height: clamp(280px, 52vh, 480px);
+  margin: 0 auto;
+  width: min(100%, 520px);
+  aspect-ratio: 1 / 1.15;
+}
+
+.felt-rail {
+  position: absolute;
+  inset: 8% 6% 22%;
+  border-radius: 50% / 42%;
+  background:
+    radial-gradient(ellipse at 50% 35%, rgba(255, 255, 255, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 60%, #1a6b4a 0%, #145c43 45%, #0e4a35 100%);
+  border: 6px solid #3d2817;
+  box-shadow:
+    inset 0 0 40px rgba(0, 0, 0, 0.35),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.table-seat {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.seat-top {
+  top: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-bottom {
+  bottom: 4%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.seat-left {
+  top: 38%;
+  left: 0;
+  transform: translateY(-50%);
+}
+
+.seat-right {
+  top: 38%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.seat-nameplate {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.table-seat.current-turn .seat-nameplate {
+  border-color: #f4c542;
+  box-shadow: 0 0 8px rgba(244, 197, 66, 0.5);
+}
+
+.table-seat.is-me .seat-nameplate {
+  background: rgba(244, 197, 66, 0.2);
+}
+
+.team-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.team-dot.team-a {
+  background: #5ce695;
+}
+
+.team-dot.team-b {
+  background: #78aaff;
+}
+
+.team-dot.team-empty {
+  background: #666;
+}
+
+.seat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seat-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.seat-badge.offline {
+  background: rgba(178, 59, 59, 0.5);
+}
+
+.opponent-hand {
+  display: flex;
+  justify-content: center;
+  height: 48px;
+}
+
+.opponent-hand .opponent-card {
+  margin-left: -14px;
+}
+
+.opponent-hand .opponent-card:first-child {
+  margin-left: 0;
+}
+
+.seat-card-count {
+  font-size: 0.7rem;
+  color: #c5ddd2;
+}
+
+.trick-center {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 55%;
+  height: 38%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trick-empty {
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.trick-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.trick-from-bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.trick-from-top {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.trick-from-left {
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.trick-from-right {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.trick-player-label {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-hand-zone {
+  position: relative;
+  z-index: 10;
+  padding: 0.25rem 0 0.75rem;
+  min-height: 110px;
+}
+
+.player-hand-zone.preview {
+  opacity: 0.85;
+}
+
+.hand-waiting {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #d5e8df;
+  margin: 0 0 0.25rem;
+}
+
+.hand-fan {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: 100px;
+  padding: 0 0.5rem;
+}
+
+.hand-card-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: unset;
+  min-width: unset;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  transform-origin: bottom center;
+}
+
+.hand-card-btn:not(:disabled):hover {
+  filter: brightness(1.05);
+  z-index: 100 !important;
+}
+
+.hand-card-btn.legal:not(:disabled) {
+  filter: drop-shadow(0 0 6px rgba(244, 197, 66, 0.85));
+}
+
+.hand-card-btn.legal:not(:disabled) .playing-card {
+  box-shadow:
+    0 0 0 2px #f4c542,
+    0 4px 12px rgba(244, 197, 66, 0.35);
+}
+
+.hand-card-btn.selectable:not(:disabled) .playing-card {
+  box-shadow:
+    0 0 0 2px #78aaff,
+    0 4px 12px rgba(120, 170, 255, 0.35);
+}
+
+.hand-card-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Playing cards ── */
+
+.playing-card {
+  position: relative;
+  border-radius: 6px;
+  background: #fefefe;
+  border: 1px solid #ccc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  font-weight: 700;
+  user-select: none;
+}
+
+.playing-card.size-sm {
+  width: 36px;
+  height: 50px;
+  font-size: 0.55rem;
+}
+
+.playing-card.size-md {
+  width: 52px;
+  height: 72px;
+  font-size: 0.7rem;
+}
+
+.playing-card.size-lg {
+  width: 64px;
+  height: 88px;
+  font-size: 0.8rem;
+}
+
+.playing-card.red {
+  color: #c62828;
+}
+
+.playing-card.black {
+  color: #1a1a1a;
+}
+
+.card-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  gap: 1px;
+}
+
+.card-corner.top-left {
+  top: 3px;
+  left: 4px;
+}
+
+.card-corner.bottom-right {
+  bottom: 3px;
+  right: 4px;
+  transform: rotate(180deg);
+}
+
+.card-rank {
+  font-size: 1.1em;
+}
+
+.card-suit {
+  font-size: 0.95em;
+}
+
+.card-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8em;
+  opacity: 0.15;
+}
+
+.playing-card.card-back {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #1a4a8a,
+      #1a4a8a 4px,
+      #2563b0 4px,
+      #2563b0 8px
+    );
+  border: 2px solid #fff;
+}
+
+.table-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 1rem;
+}
+
+.overlay-panel {
+  background: rgba(15, 45, 35, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  padding: 1rem;
+  width: min(100%, 360px);
+  text-align: center;
+}
+
+.overlay-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.overlay-copy {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #d5e8df;
+}
+
+@media (min-width: 480px) {
+  .game-page {
+    padding: 0.75rem;
+  }
+
+  .game-info-panel {
+    width: 180px;
+    font-size: 0.78rem;
+  }
+
+  .felt-table {
+    width: min(100%, 560px);
+  }
+
+  .playing-card.size-lg {
+    width: 72px;
+    height: 100px;
+  }
+}
+
 @media (min-width: 768px) {
   .page {
     padding: 1.5rem;
@@ -283,5 +722,18 @@ button:disabled {
 
   .table-meta {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .game-page {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .game-title {
+    font-size: 1.5rem;
+  }
+
+  .felt-table {
+    min-height: 420px;
   }
 }

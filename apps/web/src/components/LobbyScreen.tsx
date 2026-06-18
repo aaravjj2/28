@@ -1,4 +1,5 @@
-import type { Seat } from "@twenty-eight/shared";
+import type { RuleProfileId, Seat } from "@twenty-eight/shared";
+import { RULE_PROFILES } from "@twenty-eight/shared";
 import { useGame } from "../context/GameContext";
 import { seatLabel, teamForSeat } from "../constants";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -16,6 +17,9 @@ export function LobbyScreen() {
     isHost,
     loading,
     leaveRoom,
+    addBot,
+    removeBot,
+    setRuleProfile,
   } = useGame();
 
   const members = gameState?.lobbyMembers ?? [];
@@ -53,6 +57,28 @@ export function LobbyScreen() {
           Team A: Seat 0 + Seat 2 · Team B: Seat 1 + Seat 3
         </p>
 
+        {isHost ? (
+          <div className="meta-box" style={{ marginBottom: "1rem" }}>
+            <strong>Rule profile</strong>
+            <select
+              className="profile-select"
+              value={gameState?.ruleProfileId ?? "standard_28"}
+              disabled={loading}
+              onChange={(event) => void setRuleProfile(event.target.value as RuleProfileId)}
+            >
+              {Object.values(RULE_PROFILES).map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="subtitle" style={{ marginBottom: "1rem" }}>
+            Rules: {RULE_PROFILES[gameState?.ruleProfileId ?? "standard_28"].label}
+          </p>
+        )}
+
         <div className="seat-grid">
           {SEATS.map((seat) => {
             const occupant = members.find((member) => member.seat === seat);
@@ -71,19 +97,58 @@ export function LobbyScreen() {
                   {occupant ? (
                     <>
                       <div>{occupant.displayName}</div>
-                      <div className={`status-pill ${occupant.connected ? "online" : "offline"}`}>
-                        {occupant.connected ? "Connected" : "Disconnected"}
-                      </div>
+                      {occupant.isBot ? (
+                        <div className="status-pill" style={{ background: "#3a4f7a" }}>
+                          BOT · {occupant.botDifficulty ?? "random"}
+                        </div>
+                      ) : (
+                        <div className={`status-pill ${occupant.connected ? "online" : "offline"}`}>
+                          {occupant.connected ? "Connected" : "Disconnected"}
+                        </div>
+                      )}
+                      {isHost && occupant.isBot ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ marginTop: "0.5rem" }}
+                          disabled={loading}
+                          onClick={() => void removeBot(occupant.id)}
+                        >
+                          Remove bot
+                        </button>
+                      ) : null}
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={loading}
-                      onClick={() => void chooseSeat(seat)}
-                    >
-                      Take seat
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={loading}
+                        onClick={() => void chooseSeat(seat)}
+                      >
+                        Take seat
+                      </button>
+                      {isHost ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={loading}
+                            onClick={() => void addBot(seat, "random")}
+                          >
+                            Add random bot
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={loading}
+                            onClick={() => void addBot(seat, "heuristic")}
+                          >
+                            Add heuristic bot
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               </div>

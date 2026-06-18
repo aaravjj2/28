@@ -1,16 +1,49 @@
-import type { Seat } from "@twenty-eight/shared";
+import type { PublicGameState, PublicPlayer, Seat } from "@twenty-eight/shared";
 import { useGame } from "../context/GameContext";
-import { seatLabel, teamForSeat } from "../constants";
+import { seatToTablePosition, teamForSeat, type TablePosition } from "../constants";
 import { BiddingPanel } from "./BiddingPanel";
-import { CardView } from "./CardView";
+import { CardBack, CardView } from "./CardView";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { ErrorBanner } from "./ErrorBanner";
-import { MatchOverScreen, RoundSummary, TrumpStatus } from "./RoundSummary";
+import { GameInfoPanel } from "./GameInfoPanel";
+import { MatchOverScreen, RoundSummary } from "./RoundSummary";
 import { PlayerHand } from "./PlayerHand";
 import { TrumpSelectionPanel } from "./TrumpSelectionPanel";
-import { TurnTimerDisplay } from "./TurnTimerDisplay";
 
 const SEATS: Seat[] = [0, 1, 2, 3];
+
+type SeatSlotProps = {
+  position: TablePosition;
+  player: PublicPlayer | undefined;
+  gameState: PublicGameState;
+  isCurrent: boolean;
+  isMe: boolean;
+};
+
+function SeatSlot({ position, player, gameState, isCurrent, isMe }: SeatSlotProps) {
+  const handCount = player ? (gameState.handCountsByPlayerId[player.id] ?? 0) : 0;
+  const showCardBacks = handCount > 0 && !isMe && gameState.phase === "PLAYING_TRICKS";
+
+  return (
+    <div className={`table-seat seat-${position} ${isCurrent ? "current-turn" : ""} ${isMe ? "is-me" : ""}`}>
+      <div className="seat-nameplate">
+        <span className={`team-dot team-${player ? teamForSeat(player.seat).toLowerCase() : "empty"}`} />
+        <span className="seat-name">{player?.displayName ?? "Empty"}</span>
+        {player?.isBot ? <span className="seat-badge">BOT</span> : null}
+        {!player?.connected && player ? <span className="seat-badge offline">OFF</span> : null}
+      </div>
+      {showCardBacks ? (
+        <div className="opponent-hand" aria-label={`${player?.displayName ?? "Player"} hand`}>
+          {Array.from({ length: Math.min(handCount, 8) }, (_, index) => (
+            <CardBack key={index} size="sm" className="opponent-card" />
+          ))}
+        </div>
+      ) : handCount > 0 && !isMe ? (
+        <div className="seat-card-count">{handCount} cards</div>
+      ) : null}
+    </div>
+  );
+}
 
 export function GameScreen() {
   const { gameState, playerId, playCard, loading, leaveRoom } = useGame();
@@ -23,132 +56,106 @@ export function GameScreen() {
   }
 
   const myPlayer = gameState.players.find((player) => player.id === playerId);
+  const mySeat = myPlayer?.seat ?? 0;
   const isMyTurn =
     myPlayer !== undefined && gameState.currentTurnSeat === myPlayer.seat;
 
+  const seatLayout = SEATS.map((seat) => ({
+    seat,
+    position: seatToTablePosition(mySeat, seat),
+    player: gameState.players.find((entry) => entry.seat === seat),
+    isCurrent: gameState.currentTurnSeat === seat,
+    isMe: seat === mySeat,
+  }));
+
   return (
-    <div className="page table-layout">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-        <h1 className="title" style={{ marginBottom: 0 }}>
-          Table
-        </h1>
-        <ConnectionStatus />
-      </div>
+    <div className="game-page" data-testid="game-phase" data-phase={gameState.phase}>
+      <header className="game-header">
+        <h1 className="game-title">Table</h1>
+        <div className="game-header-actions">
+          <ConnectionStatus />
+          <button
+            type="button"
+            className="btn-secondary btn-compact"
+            disabled={loading}
+            onClick={() => void leaveRoom()}
+          >
+            Leave
+          </button>
+        </div>
+      </header>
 
       <ErrorBanner />
-
       {loading ? <p className="waiting-banner">Waiting for server…</p> : null}
 
-      <div className="table-meta">
-        <div className="meta-box">
-          <strong>Phase</strong>
-          <div>{gameState.phase}</div>
-        </div>
-        <div className="meta-box">
-          <strong>Current turn</strong>
-          <div>{gameState.currentTurnSeat === null ? "—" : seatLabel(gameState.currentTurnSeat)}</div>
-        </div>
-        <div className="meta-box">
-          <strong>Current bid</strong>
-          <div>{gameState.currentBid ?? "—"}</div>
-        </div>
-        <div className="meta-box">
-          <strong>Trump</strong>
-          <div>
-            <TrumpStatus />
+      <div className="felt-table-wrapper">
+        <GameInfoPanel />
+
+        <div className="felt-table" role="region" aria-label="Game table">
+          <div className="felt-rail" />
+
+          {seatLayout.map(({ seat, position, player, isCurrent, isMe }) => (
+            <SeatSlot
+              key={seat}
+              position={position}
+              player={player}
+              gameState={gameState}
+              isCurrent={isCurrent}
+              isMe={isMe}
+            />
+          ))}
+
+          <div className="trick-center" aria-label="Current trick">
+            {gameState.currentTrick.length === 0 ? (
+              <span className="trick-empty">Trick</span>
+            ) : (
+              gameState.currentTrick.map((play) => {
+                const position = seatToTablePosition(mySeat, play.seat);
+                const playerName =
+                  gameState.players.find((entry) => entry.id === play.playerId)?.displayName ??
+                  `Seat ${play.seat}`;
+                return (
+                  <div
+                    key={`${play.playerId}-${play.card.id}`}
+                    className={`trick-card trick-from-${position}`}
+                  >
+                    {play.concealed ? (
+                      <CardBack size="md" />
+                    ) : (
+                      <CardView card={play.card} size="md" />
+                    )}
+                    <span className="trick-player-label">{playerName}</span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
-        <div className="meta-box">
-          <strong>Match score</strong>
-          <div>
-            A {gameState.matchScore.teamA} — B {gameState.matchScore.teamB}
+
+        <BiddingPanel />
+        <TrumpSelectionPanel />
+        <RoundSummary />
+        <MatchOverScreen />
+
+        {gameState.phase === "PLAYING_TRICKS" ? (
+          <div className="player-hand-zone">
+            {!isMyTurn ? <p className="hand-waiting">Waiting for your turn…</p> : null}
+            <PlayerHand
+              hand={gameState.myHand}
+              legalCardIds={gameState.legalCardIds}
+              disabled={!isMyTurn || loading}
+              onPlayCard={(cardId) => void playCard(cardId)}
+            />
           </div>
-        </div>
-        <div className="meta-box">
-          <strong>Tricks played</strong>
-          <div>{gameState.completedTricks.length}</div>
-        </div>
-        <TurnTimerDisplay />
-        {gameState.declarerPlayerId ? (
-          <div className="meta-box">
-            <strong>Declarer</strong>
-            <div>
-              {gameState.players.find((player) => player.id === gameState.declarerPlayerId)?.displayName ??
-                "—"}
-            </div>
+        ) : gameState.phase === "BIDDING" || gameState.phase === "TRUMP_SELECTION" ? (
+          <div className="player-hand-zone preview">
+            <PlayerHand
+              hand={gameState.myHand}
+              disabled
+              onPlayCard={() => undefined}
+            />
           </div>
         ) : null}
-      </div>
-
-      <div className="seat-grid">
-        {SEATS.map((seat) => {
-          const player = gameState.players.find((entry) => entry.seat === seat);
-          const isCurrent = gameState.currentTurnSeat === seat;
-          const isMe = player?.id === playerId;
-          return (
-            <div
-              key={seat}
-              className={`seat-card ${isCurrent ? "current" : ""} ${isMe ? "mine" : ""}`}
-            >
-              <span className={`team-tag team-${teamForSeat(seat).toLowerCase()}`}>
-                Team {teamForSeat(seat)}
-              </span>
-              <div style={{ fontWeight: 700 }}>{seatLabel(seat)}</div>
-              <div>{player?.displayName ?? "Empty"}</div>
-              {player ? (
-                <div className={`status-pill ${player.connected ? "online" : "offline"}`}>
-                  {player.connected ? "Connected" : "Disconnected"}
-                </div>
-              ) : null}
-              <div style={{ marginTop: "0.35rem" }}>
-                Cards: {player ? (gameState.handCountsByPlayerId[player.id] ?? 0) : 0}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="card-panel">
-        <h2 style={{ marginTop: 0 }}>Current trick</h2>
-        <div className="trick-area">
-          {gameState.currentTrick.length === 0 ? (
-            <span>No cards played yet.</span>
-          ) : (
-            gameState.currentTrick.map((play) => (
-              <div key={`${play.playerId}-${play.card.id}`} style={{ textAlign: "center" }}>
-                <CardView card={play.card} />
-                <div style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>
-                  {gameState.players.find((player) => player.id === play.playerId)?.displayName ??
-                    seatLabel(play.seat)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <BiddingPanel />
-      <TrumpSelectionPanel />
-      <RoundSummary />
-      <MatchOverScreen />
-
-      {gameState.phase === "PLAYING_TRICKS" ? (
-        <div className="card-panel">
-          <h2 style={{ marginTop: 0 }}>Your hand</h2>
-          {!isMyTurn ? <p>Waiting for your turn…</p> : null}
-          <PlayerHand
-            hand={gameState.myHand}
-            legalCardIds={gameState.legalCardIds}
-            disabled={!isMyTurn || loading}
-            onPlayCard={(cardId) => void playCard(cardId)}
-          />
-        </div>
-      ) : null}
-
-      <div className="button-row" style={{ marginTop: "1rem" }}>
-        <button type="button" className="btn-secondary" disabled={loading} onClick={() => void leaveRoom()}>
-          Leave room
-        </button>
       </div>
     </div>
   );

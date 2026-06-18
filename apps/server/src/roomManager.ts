@@ -1,22 +1,36 @@
 import {
+  activateThani,
   applyBidAction,
   applyMatchScore,
   applyPlayAction,
+  applyStakeMultiplierAction,
+  buildPairStatus,
+  canViewerDeclarePair,
+  computeLivePointTracker,
+  computeRedealEligible,
   createBiddingState,
   createPlayState,
   createShuffledDeck,
   dealInitialRound,
   dealRemainingRound,
-  DEFAULT_TARGET_SCORE,
+  declarePair as declarePairOnState,
+  defaultGameStateFields,
+  createDefaultPairStatus,
   getLegalBidActions,
-  getLegalMoves,
   getLegalPlayMoves,
+  getLegalStakeMultiplierActions,
   getMatchWinner,
+  getRuleProfile,
+  isAuctionReadyForTrump,
   isMatchOver,
+  resolveHonoursStake,
   scoreRound,
   seatToTeam,
   serializePublicState,
   validateBidAction,
+  validateConcealedTrumpCard,
+  validatePairDeclaration,
+  validateThaniDeclaration,
   validateTrumpSelection,
   validateTrumpSuitSelection,
   type BiddingState,
@@ -27,7 +41,9 @@ import {
   type PublicGameState,
   type RoundHands,
   type RoundResult,
+  type RuleProfileId,
   type Seat,
+  type StakeMultiplierAction,
   type Suit,
   type Team,
 } from "@twenty-eight/shared";
@@ -43,6 +59,8 @@ export type RoomPlayer = {
   connected: boolean;
   seat: Seat | null;
   isHost: boolean;
+  isBot?: boolean;
+  botDifficulty?: "random" | "heuristic";
 };
 
 export type RoomGame = {
@@ -65,6 +83,8 @@ export type Room = {
   lastActivityAt: number;
   turnDeadlineAt: number | null;
   matchTargetScore: number;
+  ruleProfileId: RuleProfileId;
+  thaniEnabled: boolean;
 };
 
 export type ActionResult<T = void> =
@@ -122,9 +142,11 @@ function buildPlayersList(room: Room): Player[] {
       id: roomPlayer.id,
       displayName: roomPlayer.displayName,
       seat,
-      connected: roomPlayer.connected,
+      connected: roomPlayer.isBot ? true : roomPlayer.connected,
       isHost: roomPlayer.isHost,
       team: seatToTeam(seat),
+      isBot: roomPlayer.isBot,
+      botDifficulty: roomPlayer.botDifficulty,
     });
   }
   return players.sort((a, b) => a.seat - b.seat);
@@ -177,6 +199,7 @@ function createLobbyState(room: Room): GameState {
     roundNumber: 0,
     matchScore: { teamA: 0, teamB: 0 },
     targetScore: room.matchTargetScore,
+    ...defaultGameStateFields(room.ruleProfileId),
   };
 }
 
@@ -203,7 +226,18 @@ function syncBiddingToState(room: Room, game: RoomGame): void {
     return;
   }
 
-  game.state.phase = bidding.complete ? "TRUMP_SELECTION" : "BIDDING";
+  const profile = getRuleProfile(room.ruleProfileId);
+
+  if (bidding.stakeMultiplierPhase === "defender" || bidding.stakeMultiplierPhase === "bidder") {
+    game.state.phase = "STAKE_MULTIPLIER";
+    game.state.currentTurnSeat = bidding.currentTurnSeat;
+    game.state.stakeMultiplier = bidding.doubleMultiplier;
+    game.state.honoursStakeResolved = bidding.honoursStakeResolved;
+    syncHandsToState(room, game);
+    return;
+  }
+
+  game.state.phase = isAuctionReadyForTrump(bidding) ? "TRUMP_SELECTION" : "BIDDING";
   game.state.currentTurnSeat = bidding.currentTurnSeat;
   game.state.currentBid = bidding.currentBid;
   game.state.highestBidderPlayerId =
@@ -216,12 +250,22 @@ function syncBiddingToState(room: Room, game: RoomGame): void {
     value: bid.value,
     createdAt: new Date().toISOString(),
   }));
+  game.state.redealEligible = bidding.redealEligible;
+  game.state.redealCount = bidding.redealCount;
+  game.state.stakeMultiplier = bidding.doubleMultiplier;
+  game.state.honoursStakeResolved = bidding.honoursStakeResolved;
 
-  if (bidding.complete && bidding.declarerSeat !== null) {
+  if (isAuctionReadyForTrump(bidding) && bidding.declarerSeat !== null) {
     game.state.declarerPlayerId = room.seats[bidding.declarerSeat];
     game.state.biddingTeam = bidding.biddingTeam;
     game.state.phase = "TRUMP_SELECTION";
     game.state.currentTurnSeat = bidding.declarerSeat;
+    game.state.pairStatus = buildPairStatus({
+      bid: bidding.currentBid!,
+      profileId: room.ruleProfileId,
+      biddingTeam: bidding.biddingTeam!,
+      pairDeclarations: [],
+    });
   }
 
   syncHandsToState(room, game);
@@ -233,15 +277,36 @@ function syncPlayToState(room: Room, game: RoomGame): void {
     return;
   }
 
+  const profile = getRuleProfile(room.ruleProfileId);
+  const pairStatus = buildPairStatus({
+    bid: play.bid,
+    profileId: room.ruleProfileId,
+    biddingTeam: play.biddingTeam,
+    pairDeclarations: play.pairDeclarations,
+  });
+
   game.state.phase = play.complete ? "ROUND_SCORING" : "PLAYING_TRICKS";
   game.state.currentTurnSeat = play.currentTurnSeat;
   game.state.trumpSuit = play.trumpSuit;
   game.state.trumpRevealed = play.trumpRevealed;
+  game.state.concealedTrumpCardId = play.concealedTrumpCard?.id ?? null;
   game.state.currentTrick = play.currentTrick;
   game.state.completedTricks = play.completedTricks;
   game.state.declarerPlayerId = room.seats[play.declarerSeat];
   game.state.biddingTeam = play.biddingTeam;
   game.state.currentBid = play.bid;
+  game.state.thaniDeclared = play.thaniActive;
+  game.state.pairStatus = pairStatus;
+  game.state.pointTracker = computeLivePointTracker({
+    completedTricks: play.completedTricks,
+    biddingTeam: play.biddingTeam,
+    bid: play.bid,
+    profile,
+    bidderPairDeclared: pairStatus.bidderPairDeclared,
+    defenderPairDeclared: pairStatus.defenderPairDeclared,
+    honoursStakeResolved: game.state.honoursStakeResolved,
+    doubleMultiplier: game.state.stakeMultiplier,
+  });
 
   syncHandsToState(room, game);
 }
@@ -256,8 +321,10 @@ export function getPublicStateForPlayer(room: Room, playerId: string): PublicGam
         id: player.id,
         displayName: player.displayName,
         seat: player.seat,
-        connected: player.connected,
+        connected: player.isBot ? true : player.connected,
         isHost: player.isHost,
+        isBot: player.isBot,
+        botDifficulty: player.botDifficulty,
       })),
     };
   }
@@ -274,14 +341,47 @@ export function getPublicStateForPlayer(room: Room, playerId: string): PublicGam
 
   if (
     room.game.playState &&
-    room.game.state.phase === "PLAYING_TRICKS" &&
+    (room.game.state.phase === "PLAYING_TRICKS" || room.game.state.phase === "THANI_DECLARATION") &&
     room.game.state.currentTurnSeat !== null
   ) {
     const seat = room.game.state.currentTurnSeat;
     const currentPlayerId = room.seats[seat];
     if (currentPlayerId === playerId) {
-      augmented.legalCardIds = getLegalPlayMoves(room.game.playState, seat);
+      if (room.game.state.phase === "PLAYING_TRICKS") {
+        augmented.legalCardIds = getLegalPlayMoves(room.game.playState, seat);
+      }
     }
+  }
+
+  if (room.game.biddingState && room.game.state.phase === "STAKE_MULTIPLIER") {
+    const seat = room.players.get(playerId)?.seat;
+    if (seat !== null && seat !== undefined) {
+      const actions = getLegalStakeMultiplierActions(room.game.biddingState, seat);
+      augmented.canDouble = actions.includes("DOUBLE");
+      augmented.canRedouble = actions.includes("REDOUBLE");
+    }
+  }
+
+  if (
+    room.game.playState?.concealedTrumpCard &&
+    room.game.state.declarerPlayerId === playerId &&
+    !room.game.state.trumpRevealed
+  ) {
+    const card = room.game.playState.concealedTrumpCard;
+    augmented.myConcealedTrumpCard = {
+      id: card.id,
+      suit: card.suit,
+      rank: card.rank,
+      points: card.points,
+    };
+  }
+
+  if (room.game.state.phase === "PLAYING_TRICKS") {
+    augmented.canDeclarePair = canViewerDeclarePair(room.game.state, playerId);
+  }
+
+  if (room.game.state.phase === "THANI_DECLARATION" && room.thaniEnabled) {
+    augmented.canDeclareThani = room.game.state.declarerPlayerId === playerId;
   }
 
   if (room.turnDeadlineAt !== null) {
@@ -321,6 +421,8 @@ function validateSeated(player: RoomPlayer): ActionResult<Seat> {
 
 export type RoomManagerOptions = {
   matchTargetScore?: number;
+  ruleProfileId?: RuleProfileId;
+  thaniEnabled?: boolean;
 };
 
 export class RoomManager {
@@ -328,10 +430,14 @@ export class RoomManager {
   private readonly socketToPlayer = new Map<string, { roomCode: string; playerId: string }>();
   private readonly random: () => number;
   private readonly matchTargetScore: number;
+  private readonly defaultRuleProfileId: RuleProfileId;
+  private readonly defaultThaniEnabled: boolean;
 
   constructor(random: () => number = Math.random, options: RoomManagerOptions = {}) {
     this.random = random;
-    this.matchTargetScore = options.matchTargetScore ?? DEFAULT_TARGET_SCORE;
+    this.matchTargetScore = options.matchTargetScore ?? 6;
+    this.defaultRuleProfileId = options.ruleProfileId ?? "standard_28";
+    this.defaultThaniEnabled = options.thaniEnabled ?? true;
   }
 
   getRoom(roomCode: string): Room | undefined {
@@ -383,6 +489,8 @@ export class RoomManager {
       lastActivityAt: Date.now(),
       turnDeadlineAt: null,
       matchTargetScore: this.matchTargetScore,
+      ruleProfileId: this.defaultRuleProfileId,
+      thaniEnabled: this.defaultThaniEnabled,
     };
 
     this.rooms.set(roomCode, room);
@@ -622,6 +730,12 @@ export class RoomManager {
     const dealerSeat = 0;
     const deck = createShuffledDeck(this.random);
     const initialDeal = dealInitialRound(deck, dealerSeat);
+    const redealEligible = computeRedealEligible(
+      initialDeal.hands,
+      dealerSeat,
+      validRoom.ruleProfileId,
+      0
+    );
 
     const state: GameState = {
       phase: "BIDDING",
@@ -641,10 +755,15 @@ export class RoomManager {
       completedTricks: [],
       roundNumber: 1,
       matchScore: { teamA: 0, teamB: 0 },
-      targetScore: this.matchTargetScore,
+      targetScore: validRoom.matchTargetScore,
+      ...defaultGameStateFields(validRoom.ruleProfileId),
+      redealEligible,
     };
 
-    const biddingState = createBiddingState(dealerSeat);
+    const biddingState = createBiddingState(dealerSeat, validRoom.ruleProfileId, {
+      redealEligible,
+      redealCount: 0,
+    });
     const game: RoomGame = {
       state,
       deck: initialDeal.deck,
@@ -680,11 +799,121 @@ export class RoomManager {
     return this.applyBid(roomCode, playerId, sessionToken, "PASS");
   }
 
+  requestRedeal(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    return this.applyBid(roomCode, playerId, sessionToken, "REDEAL");
+  }
+
+  doubleBid(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    return this.applyStakeMultiplier(roomCode, playerId, sessionToken, "DOUBLE");
+  }
+
+  redoubleBid(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    return this.applyStakeMultiplier(roomCode, playerId, sessionToken, "REDOUBLE");
+  }
+
+  passStakeMultiplier(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    return this.applyStakeMultiplier(roomCode, playerId, sessionToken, "PASS");
+  }
+
+  setRuleProfile(
+    roomCode: string,
+    playerId: string,
+    sessionToken: string,
+    profileId: RuleProfileId
+  ): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, playerId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player } = validation.data;
+    if (!player.isHost) {
+      return { ok: false, error: "Only the host can change rule profile" };
+    }
+    if (validRoom.locked) {
+      return { ok: false, error: "Cannot change profile after game start" };
+    }
+
+    validRoom.ruleProfileId = profileId;
+    touchRoomActivity(validRoom);
+    return { ok: true, data: undefined };
+  }
+
+  private applyStakeMultiplier(
+    roomCode: string,
+    playerId: string,
+    sessionToken: string,
+    action: StakeMultiplierAction
+  ): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, playerId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player } = validation.data;
+    const seated = validateSeated(player);
+    if (!seated.ok) {
+      return seated;
+    }
+
+    const game = validRoom.game;
+    if (!game?.biddingState || game.state.phase !== "STAKE_MULTIPLIER") {
+      return { ok: false, error: "Stake multiplier phase is not active" };
+    }
+
+    try {
+      game.biddingState = applyStakeMultiplierAction(game.biddingState, seated.data, action);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Invalid action" };
+    }
+
+    game.state.stakeMultiplier = game.biddingState.doubleMultiplier;
+    syncBiddingToState(validRoom, game);
+    return { ok: true, data: undefined, events: [{ type: "bidding_updated" }] };
+  }
+
+  private maybeRedeal(room: Room, game: RoomGame): RoomActionResult | null {
+    const bidding = game.biddingState;
+    if (!bidding?.pendingAllPassRedeal && !bidding?.bids.some((b) => b.value === "REDEAL")) {
+      return null;
+    }
+
+    const dealerSeat = game.state.dealerSeat;
+    const redealCount = bidding!.redealCount;
+    const deck = createShuffledDeck(this.random);
+    const initialDeal = dealInitialRound(deck, dealerSeat);
+    const redealEligible = computeRedealEligible(
+      initialDeal.hands,
+      dealerSeat,
+      room.ruleProfileId,
+      redealCount
+    );
+
+    game.deck = initialDeal.deck;
+    game.roundHands = initialDeal.hands;
+    game.biddingState = createBiddingState(dealerSeat, room.ruleProfileId, {
+      redealEligible,
+      redealCount,
+    });
+    game.state.redealEligible = redealEligible;
+    game.state.redealCount = redealCount;
+    syncBiddingToState(room, game);
+    touchRoomActivity(room);
+
+    return {
+      ok: true,
+      data: undefined,
+      events: [{ type: "hand_dealt", dealPhase: "initial" }, { type: "bidding_updated" }],
+    };
+  }
+
   private applyBid(
     roomCode: string,
     playerId: string,
     sessionToken: string,
-    action: number | "PASS"
+    action: number | "PASS" | "REDEAL"
   ): RoomActionResult {
     const room = this.rooms.get(roomCode.toUpperCase());
     const validation = validateRoomPlayer(room, playerId, sessionToken);
@@ -713,23 +942,35 @@ export class RoomManager {
       return { ok: false, error: bidValidation.reason };
     }
 
-    const previousComplete = game.biddingState.complete;
     game.biddingState = applyBidAction(game.biddingState, seat, action);
-    syncBiddingToState(validRoom, game);
 
-    const events: RoomEvent[] = [{ type: "bidding_updated" }];
-    if (!previousComplete && game.biddingState.complete) {
-      events.push({ type: "bidding_updated" });
+    const redealResult = this.maybeRedeal(validRoom, game);
+    if (redealResult) {
+      return redealResult;
     }
 
-    return { ok: true, data: undefined, events };
+    if (game.biddingState.pendingAllPassRedeal) {
+      game.biddingState = { ...game.biddingState, pendingAllPassRedeal: false, redealCount: game.biddingState.redealCount + 1 };
+      return this.maybeRedeal(validRoom, game)!;
+    }
+
+    if (isAuctionReadyForTrump(game.biddingState)) {
+      game.biddingState = resolveHonoursStake(game.biddingState, this.random);
+      game.state.stakeMultiplier = game.biddingState.doubleMultiplier;
+      game.state.honoursStakeResolved = game.biddingState.honoursStakeResolved;
+    }
+
+    syncBiddingToState(validRoom, game);
+
+    return { ok: true, data: undefined, events: [{ type: "bidding_updated" }] };
   }
 
   selectTrump(
     roomCode: string,
     playerId: string,
     sessionToken: string,
-    trumpSuit: Suit
+    trumpSuit: Suit,
+    concealedCardId?: string
   ): RoomActionResult {
     const room = this.rooms.get(roomCode.toUpperCase());
     const validation = validateRoomPlayer(room, playerId, sessionToken);
@@ -744,7 +985,7 @@ export class RoomManager {
     }
 
     const game = validRoom.game;
-    if (!game || !game.biddingState?.complete) {
+    if (!game?.biddingState || !isAuctionReadyForTrump(game.biddingState)) {
       return { ok: false, error: "Trump selection is not available" };
     }
 
@@ -766,6 +1007,25 @@ export class RoomManager {
       return { ok: false, error: "Only the declarer can select trump" };
     }
 
+    const profile = getRuleProfile(validRoom.ruleProfileId);
+    let concealedCard: Card | null = null;
+    if (profile.concealedTrumpCard) {
+      if (!concealedCardId) {
+        return { ok: false, error: "Concealed trump card is required" };
+      }
+      const concealedValidation = validateConcealedTrumpCard(
+        game.roundHands,
+        declarerSeat,
+        trumpSuit,
+        concealedCardId
+      );
+      if (!concealedValidation.ok) {
+        return { ok: false, error: concealedValidation.reason };
+      }
+      concealedCard =
+        game.roundHands[declarerSeat].find((c) => c.id === concealedCardId) ?? null;
+    }
+
     const suitValidation = validateTrumpSuitSelection(game.roundHands, declarerSeat, trumpSuit);
     if (!suitValidation.ok) {
       return { ok: false, error: suitValidation.reason };
@@ -781,9 +1041,11 @@ export class RoomManager {
       biddingTeam: game.biddingState.biddingTeam!,
       bid: game.biddingState.currentBid!,
       trumpSuit,
+      concealedTrumpCard: concealedCard,
     });
 
     game.biddingState = null;
+    game.state.phase = validRoom.thaniEnabled ? "THANI_DECLARATION" : "PLAYING_TRICKS";
     syncPlayToState(validRoom, game);
 
     return {
@@ -795,6 +1057,185 @@ export class RoomManager {
         { type: "trick_updated" },
       ],
     };
+  }
+
+  declarePair(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, playerId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player } = validation.data;
+    const seated = validateSeated(player);
+    if (!seated.ok) {
+      return seated;
+    }
+
+    const game = validRoom.game;
+    if (!game?.playState || game.state.phase !== "PLAYING_TRICKS") {
+      return { ok: false, error: "Pair can only be declared during play" };
+    }
+
+    const profile = getRuleProfile(validRoom.ruleProfileId);
+    const hand = game.playState.hands[seated.data];
+    const pairValidation = validatePairDeclaration({
+      hand,
+      trumpSuit: game.playState.trumpSuit,
+      trumpRevealed: game.playState.trumpRevealed,
+      bid: game.playState.bid,
+      pairMinBidToDeclare: profile.pairMinBidToDeclare,
+      seat: seated.data,
+      biddingTeam: game.playState.biddingTeam,
+      existingDeclarations: game.playState.pairDeclarations.map((d) => ({
+        team: d.team,
+        declaredBySeat: d.seat,
+      })),
+    });
+    if (!pairValidation.ok) {
+      return { ok: false, error: pairValidation.reason };
+    }
+
+    game.playState = declarePairOnState(game.playState, seated.data, seatToTeam(seated.data));
+    syncPlayToState(validRoom, game);
+    return { ok: true, data: undefined, events: [{ type: "trick_updated" }] };
+  }
+
+  declareThani(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, playerId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player } = validation.data;
+    const seated = validateSeated(player);
+    if (!seated.ok) {
+      return seated;
+    }
+
+    const game = validRoom.game;
+    if (!game?.playState) {
+      return { ok: false, error: "Play phase is not active" };
+    }
+
+    const thaniValidation = validateThaniDeclaration({
+      thaniEnabled: validRoom.thaniEnabled,
+      thaniAlreadyDeclared: game.state.thaniDeclared,
+      declarerSeat: game.playState.declarerSeat,
+      seat: seated.data,
+      phase: game.state.phase,
+    });
+    if (!thaniValidation.ok) {
+      return { ok: false, error: thaniValidation.reason };
+    }
+
+    game.playState = activateThani(game.playState);
+    game.state.phase = "PLAYING_TRICKS";
+    game.state.thaniDeclared = true;
+    syncPlayToState(validRoom, game);
+    return { ok: true, data: undefined, events: [{ type: "trick_updated" }] };
+  }
+
+  skipThaniAndPlay(roomCode: string, playerId: string, sessionToken: string): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, playerId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player } = validation.data;
+    if (validRoom.game?.state.phase !== "THANI_DECLARATION") {
+      return { ok: false, error: "Thani declaration phase is not active" };
+    }
+    if (validRoom.game.state.declarerPlayerId !== playerId) {
+      return { ok: false, error: "Only the declarer can skip Thani" };
+    }
+
+    validRoom.game.state.phase = "PLAYING_TRICKS";
+    syncPlayToState(validRoom, validRoom.game);
+    return { ok: true, data: undefined, events: [{ type: "trick_updated" }] };
+  }
+
+  addBot(
+    roomCode: string,
+    hostId: string,
+    sessionToken: string,
+    seat: Seat,
+    difficulty: "random" | "heuristic" = "random"
+  ): RoomActionResult<{ playerId: string }> {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, hostId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player: host } = validation.data;
+    if (!host.isHost) {
+      return { ok: false, error: "Only the host can add bots" };
+    }
+    if (validRoom.locked) {
+      return { ok: false, error: "Room is locked" };
+    }
+    if (validRoom.seats[seat] !== null) {
+      return { ok: false, error: "Seat is already taken" };
+    }
+
+    const botId = generatePlayerId();
+    const botToken = generateSessionToken();
+    const bot: RoomPlayer = {
+      id: botId,
+      sessionToken: botToken,
+      displayName: `Bot ${seat}`,
+      socketId: null,
+      connected: true,
+      seat,
+      isHost: false,
+      isBot: true,
+      botDifficulty: difficulty,
+    };
+
+    validRoom.players.set(botId, bot);
+    validRoom.seats[seat] = botId;
+    validRoom.joinOrder.push(botId);
+    touchRoomActivity(validRoom);
+
+    return { ok: true, data: { playerId: botId } };
+  }
+
+  removeBot(
+    roomCode: string,
+    hostId: string,
+    sessionToken: string,
+    botPlayerId: string
+  ): RoomActionResult {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    const validation = validateRoomPlayer(room, hostId, sessionToken);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const { room: validRoom, player: host } = validation.data;
+    if (!host.isHost) {
+      return { ok: false, error: "Only the host can remove bots" };
+    }
+    if (validRoom.locked) {
+      return { ok: false, error: "Room is locked" };
+    }
+
+    const bot = validRoom.players.get(botPlayerId);
+    if (!bot?.isBot) {
+      return { ok: false, error: "Player is not a bot" };
+    }
+
+    if (bot.seat !== null) {
+      validRoom.seats[bot.seat] = null;
+    }
+    validRoom.players.delete(botPlayerId);
+    validRoom.joinOrder = validRoom.joinOrder.filter((id) => id !== botPlayerId);
+    touchRoomActivity(validRoom);
+
+    return { ok: true, data: undefined };
   }
 
   playCard(
@@ -859,7 +1300,20 @@ export class RoomManager {
 
   autoPassBid(roomCode: string): RoomActionResult | null {
     const room = this.rooms.get(roomCode.toUpperCase());
-    if (!room?.game?.biddingState || room.game.state.phase !== "BIDDING") {
+    if (!room?.game?.biddingState) {
+      return null;
+    }
+
+    if (room.game.state.phase === "STAKE_MULTIPLIER") {
+      const seat = room.game.biddingState.currentTurnSeat;
+      const player = getPlayerBySeat(room, seat);
+      if (!player) {
+        return null;
+      }
+      return this.passStakeMultiplier(room.code, player.id, player.sessionToken);
+    }
+
+    if (room.game.state.phase !== "BIDDING") {
       return null;
     }
 
@@ -898,14 +1352,20 @@ export class RoomManager {
       return null;
     }
 
-    const hand = room.game.playState.hands[seat];
-    const legalCards = getLegalMoves(
-      hand,
-      room.game.playState.currentTrick,
-      room.game.playState.trumpSuit,
-      room.game.playState.trumpRevealed
+    const playState = room.game.playState;
+    const hand = playState.hands[seat];
+    const candidates: Card[] = hand.filter((c) => legalIds.includes(c.id));
+    const concealed = playState.concealedTrumpCard;
+    if (concealed && legalIds.includes(concealed.id)) {
+      candidates.push(concealed);
+    }
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const lowest = candidates.reduce((min, card) =>
+      card.strength < min.strength ? card : min
     );
-    const lowest = legalCards.reduce((min, card) => (card.strength < min.strength ? card : min));
     return this.playCard(room.code, player.id, player.sessionToken, lowest.id);
   }
 
@@ -964,12 +1424,31 @@ export class RoomManager {
     game.state.biddingTeam = null;
     game.state.trumpSuit = null;
     game.state.trumpRevealed = false;
+    game.state.concealedTrumpCardId = null;
+    game.state.thaniDeclared = false;
+    game.state.stakeMultiplier = 1;
+    game.state.honoursStakeResolved = null;
+    game.state.redealEligible = false;
+    game.state.redealCount = 0;
+    game.state.pairStatus = createDefaultPairStatus();
+    game.state.pointTracker = null;
     game.state.currentTrick = [];
     game.state.completedTricks = [];
     game.state.phase = "BIDDING";
     game.deck = initialDeal.deck;
     game.roundHands = initialDeal.hands;
-    game.biddingState = createBiddingState(nextDealer);
+
+    const redealEligible = computeRedealEligible(
+      initialDeal.hands,
+      nextDealer,
+      room.ruleProfileId,
+      0
+    );
+    game.state.redealEligible = redealEligible;
+    game.biddingState = createBiddingState(nextDealer, room.ruleProfileId, {
+      redealEligible,
+      redealCount: 0,
+    });
     game.playState = null;
     game.lastRoundResult = null;
 
@@ -984,15 +1463,26 @@ export class RoomManager {
 
   private finalizeRound(room: Room, game: RoomGame): RoomEvent[] {
     const play = game.playState!;
+    const bidderPairDeclared = play.pairDeclarations.some((d) => d.team === play.biddingTeam);
+    const defenderPairDeclared = play.pairDeclarations.some((d) => d.team !== play.biddingTeam);
+
     const result = scoreRound(
       play.completedTricks,
       play.biddingTeam,
       play.bid,
-      play.declarerSeat
+      play.declarerSeat,
+      {
+        profileId: room.ruleProfileId,
+        bidderPairDeclared,
+        defenderPairDeclared,
+        thaniDeclared: play.thaniActive,
+        honoursStakeResolved: game.state.honoursStakeResolved,
+        doubleMultiplier: game.state.stakeMultiplier,
+      }
     );
 
     game.lastRoundResult = result;
-    game.state.matchScore = applyMatchScore(game.state.matchScore, result.matchPointWinner!);
+    game.state.matchScore = applyMatchScore(game.state.matchScore, result);
     game.state.phase = "ROUND_SCORING";
     game.playState = null;
 
