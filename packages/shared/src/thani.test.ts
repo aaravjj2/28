@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { evaluateThaniResult, validateThaniDeclaration } from "./thani";
+import {
+  createThaniState,
+  evaluateThaniResult,
+  getThaniTrickPlayerCount,
+  validateThaniDeclaration,
+} from "./thani";
 import type { Trick } from "./types";
 
 describe("thani", () => {
@@ -25,6 +30,12 @@ describe("thani", () => {
         phase: "THANI_DECLARATION",
       }).ok
     ).toBe(false);
+  });
+
+  it("uses three-card tricks when partner sits out", () => {
+    const thani = createThaniState(1);
+    expect(getThaniTrickPlayerCount(thani)).toBe(3);
+    expect(getThaniTrickPlayerCount(null)).toBe(4);
   });
 
   it("detects declarer winning all eight tricks alone", () => {

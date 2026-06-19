@@ -62,6 +62,7 @@ export function LobbyScreen() {
             <strong>Rule profile</strong>
             <select
               className="profile-select"
+              data-testid="rule-profile-select"
               value={gameState?.ruleProfileId ?? "standard_28"}
               disabled={loading}
               onChange={(event) => void setRuleProfile(event.target.value as RuleProfileId)}

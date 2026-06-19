@@ -66,4 +66,20 @@ describe("trickResolver", () => {
 
     expect(winner.seat).toBe(2);
   });
+
+  it("ignores trump entirely in no-trump mode", () => {
+    const winner = resolveTrickWinner(
+      [
+        play(0, "hearts", "10"),
+        play(1, "spades", "J"),
+        play(2, "hearts", "A"),
+      ],
+      "hearts",
+      "spades",
+      true,
+      true
+    );
+
+    expect(winner.seat).toBe(2);
+  });
 });

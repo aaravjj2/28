@@ -39,6 +39,12 @@ describe("ruleProfiles", () => {
     expect(getStakePoints(22, STANDARD_28, { doubleMultiplier: 2 })).toBe(6);
   });
 
+  it("house profile uses 4-point stake for bids 20-24", () => {
+    expect(getStakePoints(20, HOUSE_28_16_START)).toBe(4);
+    expect(getStakePoints(24, HOUSE_28_16_START)).toBe(4);
+    expect(getStakePoints(27, HOUSE_28_16_START)).toBe(4);
+  });
+
   it("future 29 profile uses 29 total points", () => {
     expect(RULE_PROFILES.future_29_placeholder.totalPoints).toBe(29);
     expect(RULE_PROFILES.future_29_placeholder.maxBid).toBe(29);

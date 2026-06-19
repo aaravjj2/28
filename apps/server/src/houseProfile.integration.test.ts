@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getLegalBidActions, isAuctionReadyForTrump } from "@twenty-eight/shared";
+import {
+  getLegalBidActions,
+  getLegalPlayMoves,
+  isAuctionReadyForTrump,
+  SUITS,
+} from "@twenty-eight/shared";
 import { RoomManager } from "./roomManager";
 
 describe("house_28_16_start integration", () => {
-  it("runs a full round with minimum bid 16", () => {
+  it("completes a full round with minimum bid 16", () => {
     const manager = new RoomManager(() => 0.42, {
       matchTargetScore: 1,
       ruleProfileId: "house_28_16_start",
@@ -43,39 +48,84 @@ describe("house_28_16_start integration", () => {
     const openingActions = getLegalBidActions(bidding, bidding.currentTurnSeat);
     expect(openingActions[0]).toBe(16);
 
-    let safety = 0;
-    while (safety < 20) {
-      const liveGame = manager.getRoom(roomCode)!.game!;
-      const current = liveGame.biddingState;
-      if (!current || isAuctionReadyForTrump(current)) {
-        break;
-      }
-      const turnSeat = current.currentTurnSeat;
-      const playerId = manager.getRoom(roomCode)!.seats[turnSeat]!;
-      const token = manager.getRoom(roomCode)!.players.get(playerId)!.sessionToken;
-      if (
-        liveGame.state.phase === "STAKE_MULTIPLIER" ||
-        current.stakeMultiplierPhase === "defender" ||
-        current.stakeMultiplierPhase === "bidder"
-      ) {
-        manager.passStakeMultiplier(roomCode, playerId, token);
-        safety += 1;
-        continue;
-      }
-      const actions = getLegalBidActions(current, turnSeat);
-      if (actions.includes("PASS")) {
-        manager.passBid(roomCode, playerId, token);
-      } else if (typeof actions[0] === "number") {
-        manager.placeBid(roomCode, playerId, token, actions[0]!);
-      }
-      safety += 1;
-    }
+    completeBidding(manager, roomCode);
+    startPlay(manager, roomCode);
+    playOutRound(manager, roomCode);
 
-    const afterBid = manager.getRoom(roomCode)!.game!;
+    const afterRound = manager.getRoom(roomCode)!.game!;
+    expect(["ROUND_SCORING", "MATCH_OVER"]).toContain(afterRound.state.phase);
+    expect(afterRound.lastRoundResult).toBeTruthy();
     expect(
-      isAuctionReadyForTrump(afterBid.biddingState!) ||
-        afterBid.playState !== null ||
-        afterBid.state.phase === "TRUMP_SELECTION"
-    ).toBe(true);
+      (afterRound.lastRoundResult?.teamAPoints ?? 0) +
+        (afterRound.lastRoundResult?.teamBPoints ?? 0)
+    ).toBe(28);
   });
 });
+
+function completeBidding(manager: RoomManager, roomCode: string): void {
+  let safety = 0;
+  while (safety < 40) {
+    const room = manager.getRoom(roomCode);
+    const bidding = room?.game?.biddingState;
+    if (!bidding || isAuctionReadyForTrump(bidding)) {
+      return;
+    }
+    const seat = bidding.currentTurnSeat;
+    const playerId = room!.seats[seat]!;
+    const token = room!.players.get(playerId)!.sessionToken;
+
+    if (
+      room!.game!.state.phase === "STAKE_MULTIPLIER" ||
+      bidding.stakeMultiplierPhase === "defender" ||
+      bidding.stakeMultiplierPhase === "bidder"
+    ) {
+      manager.passStakeMultiplier(roomCode, playerId, token);
+      safety += 1;
+      continue;
+    }
+
+    const actions = getLegalBidActions(bidding, seat);
+    const action = actions.includes("PASS") ? "PASS" : actions[0];
+    if (action === "PASS") {
+      manager.passBid(roomCode, playerId, token);
+    } else if (typeof action === "number") {
+      manager.placeBid(roomCode, playerId, token, action);
+    }
+    safety += 1;
+  }
+}
+
+function startPlay(manager: RoomManager, roomCode: string): void {
+  const room = manager.getRoom(roomCode)!;
+  const declarerId = room.game!.state.declarerPlayerId!;
+  const declarerHand = room.game!.state.handsByPlayerId[declarerId] ?? [];
+  const trumpSuit = SUITS.find((suit) => declarerHand.some((card) => card.suit === suit))!;
+  const concealedCardId = declarerHand.find((card) => card.suit === trumpSuit)!.id;
+  manager.selectTrump(
+    roomCode,
+    declarerId,
+    room.players.get(declarerId)!.sessionToken,
+    trumpSuit,
+    concealedCardId
+  );
+}
+
+function playOutRound(manager: RoomManager, roomCode: string): void {
+  let safety = 0;
+  while (safety < 64) {
+    const room = manager.getRoom(roomCode);
+    const play = room?.game?.playState;
+    if (!play || play.complete) {
+      return;
+    }
+    const seat = play.currentTurnSeat;
+    const playerId = room!.seats[seat]!;
+    const token = room!.players.get(playerId)!.sessionToken;
+    const cardId = getLegalPlayMoves(play, seat)[0];
+    if (!cardId) {
+      throw new Error("No legal play");
+    }
+    manager.playCard(roomCode, playerId, token, cardId);
+    safety += 1;
+  }
+}

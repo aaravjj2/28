@@ -12,15 +12,16 @@ export function resolveTrickWinner(
   playedCards: PlayedCard[],
   ledSuit: Suit,
   trumpSuit: Suit,
-  trumpRevealed: boolean
+  trumpRevealed: boolean,
+  noTrump = false
 ): PlayedCard {
   if (playedCards.length === 0) {
     throw new Error("Cannot resolve an empty trick");
   }
 
-  const trumpCards = playedCards.filter((play) =>
-    isTrumpCard(play.card, trumpSuit, trumpRevealed)
-  );
+  const trumpCards = noTrump
+    ? []
+    : playedCards.filter((play) => isTrumpCard(play.card, trumpSuit, trumpRevealed));
 
   if (trumpCards.length > 0) {
     return trumpCards.reduce((best, current) =>

@@ -23,6 +23,11 @@ export function isSeatActiveInThani(thani: ThaniState | null, seat: Seat): boole
   return seat !== thani.partnerSeat;
 }
 
+/** Thani tricks use three active players; partner sits out. */
+export function getThaniTrickPlayerCount(thani: ThaniState | null): number {
+  return thani?.active ? 3 : 4;
+}
+
 export function validateThaniDeclaration(params: {
   thaniEnabled: boolean;
   thaniAlreadyDeclared: boolean;

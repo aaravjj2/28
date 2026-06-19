@@ -2,7 +2,7 @@ import { applyPlay, getLegalMoves, type PlayContext } from "./legalMoves";
 import { getTrickPoints, resolveTrickWinner } from "./trickResolver";
 import type { Card, PlayState, PlayedCard, RoundHands, Seat, Suit, Trick } from "./types";
 import { TRICK_COUNT } from "./types";
-import { isSeatActiveInThani, type ThaniState } from "./thani";
+import { isSeatActiveInThani, getThaniTrickPlayerCount, type ThaniState } from "./thani";
 import { nextSeatCounterClockwise, partnerSeat, removeCardFromHand, seatToTeam } from "./utils";
 
 export function createPlayState(params: {
@@ -39,7 +39,7 @@ export function createPlayState(params: {
     biddingTeam: params.biddingTeam,
     bid: params.bid,
     trumpSuit: params.trumpSuit,
-    trumpRevealed: params.thaniActive ? true : false,
+    trumpRevealed: false,
     concealedTrumpCard,
     thaniActive: params.thaniActive ?? false,
     thaniPartnerSeat: thaniPartner,
@@ -90,25 +90,36 @@ export function validateConcealedTrumpCard(
 
 function buildPlayContext(state: PlayState, seat: Seat): PlayContext {
   const ledSuit = state.currentTrick[0]?.card.suit ?? null;
+  const noTrump = state.thaniActive;
   return {
     seat,
     declarerSeat: state.declarerSeat,
     trumpSuit: state.trumpSuit,
     trumpRevealed: state.trumpRevealed,
     concealedTrumpCard: state.concealedTrumpCard,
-    ledSuitIsConcealedTrump: ledSuit === state.trumpSuit && !state.trumpRevealed,
+    ledSuitIsConcealedTrump: !noTrump && ledSuit === state.trumpSuit && !state.trumpRevealed,
     mustLeadConcealedTrump:
+      !noTrump &&
       state.mustLeadConcealedTrump &&
       seat === state.declarerSeat &&
       state.currentTrick.length === 0 &&
       state.trickNumber === 8,
+    noTrump,
   };
 }
 
-function getNextTurnSeat(state: PlayState, fromSeat: Seat): Seat {
-  const thani: ThaniState | null = state.thaniActive && state.thaniPartnerSeat !== null
+function getThaniState(state: PlayState): ThaniState | null {
+  return state.thaniActive && state.thaniPartnerSeat !== null
     ? { active: true, declarerSeat: state.declarerSeat, partnerSeat: state.thaniPartnerSeat }
     : null;
+}
+
+export function getTrickPlayerCount(state: PlayState): number {
+  return getThaniTrickPlayerCount(getThaniState(state));
+}
+
+function getNextTurnSeat(state: PlayState, fromSeat: Seat): Seat {
+  const thani = getThaniState(state);
 
   let seat = nextSeatCounterClockwise(fromSeat);
   for (let i = 0; i < 4; i += 1) {
@@ -130,7 +141,8 @@ function completeCurrentTrick(state: PlayState): PlayState {
     state.currentTrick,
     ledSuit,
     state.trumpSuit,
-    state.trumpRevealed
+    state.trumpRevealed,
+    state.thaniActive
   );
 
   const trick: Trick = {
@@ -199,7 +211,7 @@ export function applyPlayAction(
     trumpRevealed: playResult.trumpRevealed,
   };
 
-  if (nextState.currentTrick.length === 4) {
+  if (nextState.currentTrick.length === getTrickPlayerCount(nextState)) {
     return completeCurrentTrick(nextState);
   }
 
@@ -235,9 +247,8 @@ export function activateThani(state: PlayState): PlayState {
     ...state,
     thaniActive: true,
     thaniPartnerSeat: partnerSeat(state.declarerSeat),
-    trumpRevealed: true,
+    trumpRevealed: false,
     concealedTrumpCard: null,
-    trumpSuit: state.trumpSuit,
     mustLeadConcealedTrump: false,
   };
 }

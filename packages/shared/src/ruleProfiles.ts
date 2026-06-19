@@ -140,7 +140,10 @@ export function getStakePoints(
   if (level === "high") {
     base = profile.twentyPlusFourPointStake && bid >= 20 ? 4 : 3;
   } else if (level === "honours") {
-    base = options?.honoursStakeResolved ?? profile.honoursStakeMaxDelta;
+    base =
+      profile.twentyPlusFourPointStake && bid >= 20
+        ? 4
+        : (options?.honoursStakeResolved ?? profile.honoursStakeMaxDelta);
   } else {
     base = 1;
   }

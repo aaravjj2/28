@@ -151,11 +151,24 @@ VITE_SERVER_URL=https://api.28.example.com
 
 **Rematch preserves seats.** After match over, the host can rematch; all four connected players return to the lobby with the same seats. Match score resets when a new game starts.
 
+## Rule profiles
+
+The host can choose a rule profile in the lobby before starting:
+
+| Profile | Notes |
+|---------|--------|
+| `standard_28` | Pagat baseline — opens at 14 |
+| `house_28_16_start` | House rules — opens at 16, 4-point stake from bid 20+ |
+| `future_29_placeholder` | Experimental 29-point variant |
+
+Set the server default with `RULE_PROFILE=house_28_16_start` in `.env`.
+
 ## Known MVP limitations
 
 - In-memory rooms only (lost on server restart)
 - No accounts or authentication beyond session tokens
-- No matchmaking, bots, voice chat, tournaments, or cosmetics
+- No matchmaking, voice chat, tournaments, or cosmetics
+- Practice bots are available in the lobby (host can add/remove before start); bot play is not tuned for production
 - No Redis, persistent audit log, or collusion detection
 - Host does not auto-transfer mid-game if host disconnects
 - Single Node process (no horizontal scaling)

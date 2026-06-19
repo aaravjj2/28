@@ -83,6 +83,18 @@ describe("bidding", () => {
     expect(state.currentBid).toBe(17);
   });
 
+  it("skips double/redouble when winning bid is below 20", () => {
+    let state = createBiddingState(0);
+    state = applyBidAction(state, 1, 14);
+    state = applyBidAction(state, 2, "PASS");
+    state = applyBidAction(state, 3, "PASS");
+    state = applyBidAction(state, 0, "PASS");
+
+    expect(isAuctionReadyForTrump(state)).toBe(true);
+    expect(state.stakeMultiplierPhase).toBe("done");
+    expect(state.doubleMultiplier).toBe(1);
+  });
+
   it("exposes legal bid actions for current player", () => {
     const state = createBiddingState(0);
     const actions = getLegalBidActions(state, 1);

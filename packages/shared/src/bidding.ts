@@ -133,9 +133,15 @@ function getNextActiveSeat(state: BiddingState, fromSeat: Seat): Seat | null {
   return null;
 }
 
+const DOUBLE_REDOUBLE_MIN_BID = 20;
+
 function beginStakeMultiplierPhase(state: BiddingState): BiddingState {
   const profile = getProfile(state);
-  if (!profile.allowDoubleRedouble) {
+  if (
+    !profile.allowDoubleRedouble ||
+    state.currentBid === null ||
+    state.currentBid < DOUBLE_REDOUBLE_MIN_BID
+  ) {
     return { ...state, stakeMultiplierPhase: "done", complete: true };
   }
   const defendingTeam = state.biddingTeam === "A" ? "B" : "A";
@@ -365,9 +371,13 @@ export function resolveHonoursStake(state: BiddingState, random: () => number): 
   if (!level) {
     return state;
   }
+  const honoursStakeResolved =
+    profile.twentyPlusFourPointStake && state.currentBid >= 20
+      ? 4
+      : rollHonoursStake(profile, random);
   return {
     ...state,
-    honoursStakeResolved: rollHonoursStake(profile, random),
+    honoursStakeResolved,
   };
 }
 

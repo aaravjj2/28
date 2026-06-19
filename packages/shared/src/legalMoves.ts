@@ -9,6 +9,8 @@ export type PlayContext = {
   concealedTrumpCard: Card | null;
   ledSuitIsConcealedTrump: boolean;
   mustLeadConcealedTrump: boolean;
+  /** Thani / single-hand: no trump suit applies. */
+  noTrump?: boolean;
 };
 
 export function hasLedSuit(hand: Card[], ledSuit: Suit): boolean {
@@ -58,6 +60,17 @@ export function getLegalMoves(
 
   if (availableHand.length === 0) {
     return [];
+  }
+
+  if (ctx.noTrump) {
+    const ledSuit = getLedSuit(currentTrick);
+    if (ledSuit === null) {
+      return [...availableHand];
+    }
+    if (hasLedSuit(availableHand, ledSuit)) {
+      return availableHand.filter((card) => card.suit === ledSuit);
+    }
+    return [...availableHand];
   }
 
   const ledSuit = getLedSuit(currentTrick);
@@ -189,16 +202,17 @@ export function applyPlay(
   }
 
   const ledSuit = getLedSuit(currentTrick) ?? card.suit;
-  const nextTrumpRevealed =
-    ctx.trumpRevealed ||
-    shouldRevealTrump(
-      card,
-      hand,
-      ledSuit,
-      ctx.trumpSuit,
-      ctx.trumpRevealed,
-      ctx.concealedTrumpCard
-    );
+  const nextTrumpRevealed = ctx.noTrump
+    ? false
+    : ctx.trumpRevealed ||
+      shouldRevealTrump(
+        card,
+        hand,
+        ledSuit,
+        ctx.trumpSuit,
+        ctx.trumpRevealed,
+        ctx.concealedTrumpCard
+      );
 
   let nextHand = hand;
   let nextConcealed = ctx.concealedTrumpCard;
