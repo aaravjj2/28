@@ -32,6 +32,18 @@ describe("thani", () => {
     ).toBe(false);
   });
 
+  it("rejects thani after play has started", () => {
+    expect(
+      validateThaniDeclaration({
+        thaniEnabled: true,
+        thaniAlreadyDeclared: false,
+        declarerSeat: 1,
+        seat: 1,
+        phase: "PLAYING_TRICKS",
+      }).ok
+    ).toBe(false);
+  });
+
   it("uses three-card tricks when partner sits out", () => {
     const thani = createThaniState(1);
     expect(getThaniTrickPlayerCount(thani)).toBe(3);

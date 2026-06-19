@@ -9,6 +9,7 @@ import { GameInfoPanel } from "./GameInfoPanel";
 import { MatchOverScreen, RoundSummary } from "./RoundSummary";
 import { PlayerHand } from "./PlayerHand";
 import { TrumpSelectionPanel } from "./TrumpSelectionPanel";
+import { ThaniDeclarationPanel } from "./ThaniDeclarationPanel";
 
 const SEATS: Seat[] = [0, 1, 2, 3];
 
@@ -134,6 +135,7 @@ export function GameScreen() {
 
         <BiddingPanel />
         <TrumpSelectionPanel />
+        <ThaniDeclarationPanel />
         <RoundSummary />
         <MatchOverScreen />
 
@@ -142,6 +144,7 @@ export function GameScreen() {
             {!isMyTurn ? <p className="hand-waiting">Waiting for your turn…</p> : null}
             <PlayerHand
               hand={gameState.myHand}
+              concealedTrumpCard={gameState.myConcealedTrumpCard}
               legalCardIds={gameState.legalCardIds}
               disabled={!isMyTurn || loading}
               onPlayCard={(cardId) => void playCard(cardId)}

@@ -32,4 +32,21 @@ describe("PlayerHand", () => {
     fireEvent.click(screen.getByLabelText(/J of hearts/i));
     expect(onPlayCard).toHaveBeenCalledWith("hearts-J");
   });
+
+  it("renders set-aside concealed trump as a playable card", () => {
+    const onPlayCard = vi.fn();
+    const concealed = { id: "spades-J", suit: "spades" as const, rank: "J" as const, points: 3 };
+    render(
+      <PlayerHand
+        hand={[{ id: "hearts-7", suit: "hearts", rank: "7", points: 0 }]}
+        concealedTrumpCard={concealed}
+        legalCardIds={[concealed.id]}
+        onPlayCard={onPlayCard}
+      />
+    );
+    const trumpButton = screen.getByLabelText(/J of spades/i);
+    expect(trumpButton).toBeEnabled();
+    fireEvent.click(trumpButton);
+    expect(onPlayCard).toHaveBeenCalledWith("spades-J");
+  });
 });

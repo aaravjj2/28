@@ -10,7 +10,7 @@ function formatStakeLevel(level: string | null | undefined): string {
 }
 
 export function GameInfoPanel() {
-  const { gameState, playerId, declarePair, declareThani, skipThani, loading } = useGame();
+  const { gameState, playerId, declarePair, loading } = useGame();
   if (!gameState) {
     return null;
   }
@@ -76,27 +76,6 @@ export function GameInfoPanel() {
         </span>
       </div>
       <TurnTimerDisplay compact />
-
-      {gameState.phase === "THANI_DECLARATION" && gameState.declarerPlayerId === playerId ? (
-        <div className="info-actions">
-          <button
-            type="button"
-            className="btn-primary btn-compact"
-            disabled={loading || !gameState.canDeclareThani}
-            onClick={() => void declareThani()}
-          >
-            Declare Thani
-          </button>
-          <button
-            type="button"
-            className="btn-secondary btn-compact"
-            disabled={loading}
-            onClick={() => void skipThani()}
-          >
-            Skip
-          </button>
-        </div>
-      ) : null}
 
       {gameState.canDeclarePair ? (
         <div className="info-actions">

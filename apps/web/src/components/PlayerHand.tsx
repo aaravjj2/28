@@ -3,6 +3,7 @@ import { CardView } from "./CardView";
 
 type PlayerHandProps = {
   hand: PublicCard[];
+  concealedTrumpCard?: PublicCard | null;
   legalCardIds?: string[];
   disabled?: boolean;
   onPlayCard: (cardId: string) => void;
@@ -13,13 +14,21 @@ type PlayerHandProps = {
 
 export function PlayerHand({
   hand,
+  concealedTrumpCard = null,
   legalCardIds,
   disabled = false,
   onPlayCard,
   suitFilter,
   onSelectCard,
 }: PlayerHandProps) {
-  const visibleHand = suitFilter ? hand.filter((card) => card.suit === suitFilter) : hand;
+  const concealedInHand = concealedTrumpCard
+    ? hand.some((card) => card.id === concealedTrumpCard.id)
+    : false;
+  const displayHand =
+    concealedTrumpCard && !concealedInHand && !suitFilter
+      ? [...hand, concealedTrumpCard]
+      : hand;
+  const visibleHand = suitFilter ? displayHand.filter((card) => card.suit === suitFilter) : displayHand;
   const count = visibleHand.length;
   const spread = count <= 1 ? 0 : Math.min(14, 52 / count);
 
@@ -27,6 +36,7 @@ export function PlayerHand({
     <div className="hand-fan" aria-label="Your hand">
       {visibleHand.map((card, index) => {
         const isLegal = legalCardIds ? legalCardIds.includes(card.id) : true;
+        const isConcealedTrump = concealedTrumpCard?.id === card.id && !concealedInHand;
         const isSelectable = suitFilter ? true : isLegal;
         const rotation = count <= 1 ? 0 : -spread / 2 + (index * spread) / Math.max(count - 1, 1);
         const offset = (index - (count - 1) / 2) * 10;
@@ -35,7 +45,7 @@ export function PlayerHand({
           <button
             key={card.id}
             type="button"
-            className={`hand-card-btn ${isLegal && !suitFilter ? "legal" : ""} ${suitFilter ? "selectable" : ""}`}
+            className={`hand-card-btn ${isLegal && !suitFilter ? "legal" : ""} ${suitFilter ? "selectable" : ""} ${isConcealedTrump ? "concealed-trump" : ""}`}
             disabled={disabled || !isSelectable}
             style={{
               transform: `translateX(${offset}px) rotate(${rotation}deg)`,

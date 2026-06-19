@@ -203,11 +203,16 @@ describe("server integration", () => {
     });
 
     const roomAfterTrump = roomManager.getRoom(roomCode)!;
+    if (roomAfterTrump.game?.state.phase === "THANI_DECLARATION") {
+      await emitWithAck(declarerClient.socket, "skip_thani");
+    }
+
+    const roomAfterThani = roomManager.getRoom(roomCode)!;
     for (const client of clients) {
       if (client.playerId === declarerClient.playerId) {
         continue;
       }
-      const publicState = getPublicStateForPlayer(roomAfterTrump, client.playerId)!;
+      const publicState = getPublicStateForPlayer(roomAfterThani, client.playerId)!;
       expect(publicState.trumpSuit).toBeNull();
       expect(publicState.phase).toBe("PLAYING_TRICKS");
     }

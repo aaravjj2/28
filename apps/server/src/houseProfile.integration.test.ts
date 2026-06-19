@@ -108,6 +108,15 @@ function startPlay(manager: RoomManager, roomCode: string): void {
     trumpSuit,
     concealedCardId
   );
+
+  const afterTrump = manager.getRoom(roomCode)!;
+  if (afterTrump.game?.state.phase === "THANI_DECLARATION") {
+    manager.skipThaniAndPlay(
+      roomCode,
+      declarerId,
+      afterTrump.players.get(declarerId)!.sessionToken
+    );
+  }
 }
 
 function playOutRound(manager: RoomManager, roomCode: string): void {

@@ -67,7 +67,9 @@ export function LobbyScreen() {
               disabled={loading}
               onChange={(event) => void setRuleProfile(event.target.value as RuleProfileId)}
             >
-              {Object.values(RULE_PROFILES).map((profile) => (
+              {Object.values(RULE_PROFILES)
+                .filter((profile) => profile.id !== "future_29_placeholder")
+                .map((profile) => (
                 <option key={profile.id} value={profile.id}>
                   {profile.label}
                 </option>

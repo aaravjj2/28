@@ -15,6 +15,7 @@ export function defaultGameStateFields(
   | "ruleProfileId"
   | "concealedTrumpCardId"
   | "thaniDeclared"
+  | "thaniSkipped"
   | "pairStatus"
   | "pointTracker"
   | "stakeMultiplier"
@@ -26,6 +27,7 @@ export function defaultGameStateFields(
     ruleProfileId,
     concealedTrumpCardId: null,
     thaniDeclared: false,
+    thaniSkipped: false,
     pairStatus: createDefaultPairStatus(),
     pointTracker: null,
     stakeMultiplier: 1,

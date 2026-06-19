@@ -9,7 +9,10 @@ import {
 } from "@twenty-eight/shared";
 import { getPublicStateForPlayer, RoomManager } from "./roomManager";
 
-function createSeededManager(seed = 0.42, options?: { matchTargetScore?: number }): RoomManager {
+function createSeededManager(
+  seed = 0.42,
+  options?: { matchTargetScore?: number; thaniEnabled?: boolean }
+): RoomManager {
   let value = seed;
   return new RoomManager(
     () => {
@@ -252,6 +255,26 @@ describe("RoomManager", () => {
     expect(rebid.ok).toBe(false);
   });
 
+  it("enters thani declaration after trump when thani is enabled", () => {
+    const manager = createSeededManager(0.42, { thaniEnabled: true });
+    const { roomCode, hostPlayer } = setupFourPlayerRoom(manager);
+    manager.startGame(roomCode, hostPlayer.id, hostPlayer.sessionToken);
+    completeBidding(manager, roomCode);
+    const room = manager.getRoom(roomCode)!;
+    const declarerId = room.game!.state.declarerPlayerId!;
+    const declarerHand = room.game!.state.handsByPlayerId[declarerId] ?? [];
+    const trumpSuit = SUITS.find((suit) => declarerHand.some((card) => card.suit === suit))!;
+    const concealedCardId = declarerHand.find((card) => card.suit === trumpSuit)!.id;
+    manager.selectTrump(
+      roomCode,
+      declarerId,
+      room.players.get(declarerId)!.sessionToken,
+      trumpSuit,
+      concealedCardId
+    );
+    expect(manager.getRoom(roomCode)?.game?.state.phase).toBe("THANI_DECLARATION");
+  });
+
   it("rejects non-declarer trump selection", () => {
     const manager = createSeededManager();
     const { roomCode, hostPlayer } = setupFourPlayerRoom(manager);
@@ -449,7 +472,22 @@ function startPlay(manager: RoomManager, roomCode: string): void {
   const declarerHand = room.game!.state.handsByPlayerId[declarerId] ?? [];
   const trumpSuit = SUITS.find((suit) => declarerHand.some((card) => card.suit === suit))!;
   const concealedCardId = declarerHand.find((card) => card.suit === trumpSuit)!.id;
-  manager.selectTrump(roomCode, declarerId, room.players.get(declarerId)!.sessionToken, trumpSuit, concealedCardId);
+  manager.selectTrump(
+    roomCode,
+    declarerId,
+    room.players.get(declarerId)!.sessionToken,
+    trumpSuit,
+    concealedCardId
+  );
+
+  const afterTrump = manager.getRoom(roomCode)!;
+  if (afterTrump.game?.state.phase === "THANI_DECLARATION") {
+    manager.skipThaniAndPlay(
+      roomCode,
+      declarerId,
+      afterTrump.players.get(declarerId)!.sessionToken
+    );
+  }
 }
 
 function playOutRound(manager: RoomManager, roomCode: string): void {

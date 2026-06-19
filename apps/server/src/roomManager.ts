@@ -271,6 +271,22 @@ function syncBiddingToState(room: Room, game: RoomGame): void {
   syncHandsToState(room, game);
 }
 
+function resolvePlayPhase(room: Room, game: RoomGame): GameState["phase"] {
+  const play = game.playState;
+  if (!play || play.complete) {
+    return "ROUND_SCORING";
+  }
+  if (
+    room.thaniEnabled &&
+    !play.thaniActive &&
+    !game.state.thaniSkipped &&
+    play.completedTricks.length === 0
+  ) {
+    return "THANI_DECLARATION";
+  }
+  return "PLAYING_TRICKS";
+}
+
 function syncPlayToState(room: Room, game: RoomGame): void {
   const play = game.playState;
   if (!play) {
@@ -285,7 +301,7 @@ function syncPlayToState(room: Room, game: RoomGame): void {
     pairDeclarations: play.pairDeclarations,
   });
 
-  game.state.phase = play.complete ? "ROUND_SCORING" : "PLAYING_TRICKS";
+  game.state.phase = resolvePlayPhase(room, game);
   game.state.currentTurnSeat = play.currentTurnSeat;
   game.state.trumpSuit = play.trumpSuit;
   game.state.trumpRevealed = play.trumpRevealed;
@@ -1045,7 +1061,6 @@ export class RoomManager {
     });
 
     game.biddingState = null;
-    game.state.phase = validRoom.thaniEnabled ? "THANI_DECLARATION" : "PLAYING_TRICKS";
     syncPlayToState(validRoom, game);
 
     return {
@@ -1152,6 +1167,7 @@ export class RoomManager {
       return { ok: false, error: "Only the declarer can skip Thani" };
     }
 
+    validRoom.game.state.thaniSkipped = true;
     validRoom.game.state.phase = "PLAYING_TRICKS";
     syncPlayToState(validRoom, validRoom.game);
     return { ok: true, data: undefined, events: [{ type: "trick_updated" }] };
@@ -1426,6 +1442,7 @@ export class RoomManager {
     game.state.trumpRevealed = false;
     game.state.concealedTrumpCardId = null;
     game.state.thaniDeclared = false;
+    game.state.thaniSkipped = false;
     game.state.stakeMultiplier = 1;
     game.state.honoursStakeResolved = null;
     game.state.redealEligible = false;

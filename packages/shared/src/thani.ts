@@ -44,7 +44,7 @@ export function validateThaniDeclaration(params: {
   if (params.seat !== params.declarerSeat) {
     return { ok: false, reason: "Only the declarer can declare Thani" };
   }
-  if (params.phase !== "THANI_DECLARATION" && params.phase !== "PLAYING_TRICKS") {
+  if (params.phase !== "THANI_DECLARATION") {
     return { ok: false, reason: "Thani can only be declared before the first trick" };
   }
   return { ok: true };

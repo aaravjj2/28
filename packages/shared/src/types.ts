@@ -97,6 +97,7 @@ export type GameState = {
   /** Face-down trump card id — server only, never in public state for non-declarer. */
   concealedTrumpCardId: string | null;
   thaniDeclared: boolean;
+  thaniSkipped: boolean;
   pairStatus: PairStatus;
   pointTracker: PointTrackerState | null;
   stakeMultiplier: number;

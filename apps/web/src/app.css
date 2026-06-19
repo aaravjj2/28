@@ -565,6 +565,33 @@ button:disabled {
     0 4px 12px rgba(244, 197, 66, 0.35);
 }
 
+.hand-card-btn.concealed-trump:not(:disabled) .playing-card {
+  box-shadow:
+    0 0 0 2px #c9a0ff,
+    0 4px 12px rgba(201, 160, 255, 0.45);
+}
+
+.hand-card-btn.concealed-trump:not(:disabled)::after {
+  content: "Trump";
+  position: absolute;
+  top: -0.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #e8d4ff;
+  background: rgba(80, 40, 120, 0.9);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  pointer-events: none;
+}
+
+.thani-overlay .overlay-panel {
+  max-width: 22rem;
+  border-color: rgba(201, 160, 255, 0.35);
+}
+
 .hand-card-btn.selectable:not(:disabled) .playing-card {
   box-shadow:
     0 0 0 2px #78aaff,
